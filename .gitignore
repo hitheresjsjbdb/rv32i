@@ -1,2 +1,5 @@
 /.vscode
 /.metals
+/chisel-template/.bloop
+/chisel-template/.metals
+/chisel-template/.vscode
