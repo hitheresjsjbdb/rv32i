@@ -1,0 +1,19 @@
+[1;34m[src/utils/log.c:30 init_log] Log is written to /home/simly/Files/ysyx/ysyx-workbench/nemu/build/nemu-log.txt[0m
+[1;34m[src/memory/paddr.c:50 init_mem] physical memory area [0x80000000, 0x87ffffff][0m
+[1;34m[src/monitor/monitor.c:50 load_img] No image is given. Use the default build-in image.[0m
+[1;34m[src/monitor/monitor.c:28 welcome] Trace: [1;32mON[0m[0m
+[1;34m[src/monitor/monitor.c:29 welcome] If trace is enabled, a log file will be generated to record the trace. This may lead to a large log file. If it is not necessary, you can disable it in menuconfig[0m
+[1;34m[src/monitor/monitor.c:32 welcome] Build time: 21:39:56, Mar 12 2026[0m
+0x80000000: 00 10 06 13 addi	a2, zero, 1
+0x80000004: 01 f0 06 93 addi	a3, zero, 0x1f
+0x80000008: 00 d6 17 33 sll	a4, a2, a3
+0x8000000c: 00 07 27 83 lw	a5, 0(a4)
+0x80000010: 00 10 06 93 addi	a3, zero, 1
+0x80000014: 00 d6 04 63 beq	a2, a3, 8
+0x8000001c: ff df f0 ef jal	-4
+0x80000018: 00 00 80 67 ret
+0x80000020: 00 10 00 73 ebreak
+[1;34m[src/cpu/cpu-exec.c:127 cpu_exec] nemu: [1;32mHIT GOOD TRAP[0m at pc = 0x80000020[0m
+[1;34m[src/cpu/cpu-exec.c:95 statistic] host time spent = 77 us[0m
+[1;34m[src/cpu/cpu-exec.c:96 statistic] total guest instructions = 9[0m
+[1;34m[src/cpu/cpu-exec.c:97 statistic] simulation frequency = 116,883 inst/s[0m
