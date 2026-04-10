@@ -12,7 +12,7 @@ module MUX_3to1(X,Y,Z,control,out);
             `RegSel_rd  : out = X;
             `RegSel_rt  : out = Y;
             `RegSel_31  : out = Z;
-            `RegSel_else: out = 5'd0;
+            `RegSel_else: out = 0;
         endcase
     end
 

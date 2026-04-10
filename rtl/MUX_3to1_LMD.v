@@ -14,7 +14,7 @@ module MUX_3to1_LMD(X,Y,Z,control,out);
             `WDSel_FromALU : out = X;
             `WDSel_FromMEM : out = Y;
             `WDSel_FromPC  : out = Z;
-            `WDSel_Else    : out = 32'b0;
+            `WDSel_Else    : out = 0;
         endcase
     end
 

@@ -8,7 +8,7 @@ module Flopr(clk, rst, in_data, out_data);
 
     always @(posedge clk or posedge rst) begin
         if (rst) begin
-            out_data <= 32'd0;
+            out_data <= 0;
         end
         else begin
             out_data <= in_data;

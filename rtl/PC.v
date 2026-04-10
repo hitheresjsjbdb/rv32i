@@ -2,13 +2,13 @@
 
 `include "ctrl_signal_def.v"
 
-module PC(
-    input         clk,
-    input         rst,
-    input         PCWrite,
-    input  [31:0] NPC,
-    output reg [31:0] PC
-);
+module PC(clk, rst, PCWrite, NPC, PC);
+    input  clk;
+    input  rst;
+    input  PCWrite;
+    input  [31:0] NPC;
+    output reg [31:0] PC;
+
 
 always @(posedge clk or posedge rst) begin
     if (rst) begin
