@@ -12,7 +12,8 @@ output [31:0] RD1,
 output [31:0] RD2
 );
 
-reg [31:0] register [0:31];
+reg [31:0] register [1:31];
+reg [31:0] register [0];
 
 always @(clk) begin
   register[0] = 32'h0;
