@@ -10,7 +10,7 @@ static void tick(VPCReg* dut) {
     dut->clock = 1;
     dut->eval();
 }
-
+ 
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
 
