@@ -4,16 +4,13 @@ constexpr word_t dataMemAddrOffset {0U};
 constexpr auto dataMemSize {0x8000U};
 constexpr auto instMemSize {0x8000U};
 
-static word_t dataMem[dataMemSize] {
-    0x01234567,
-    0x89abcdef,
-};
+static word_t dataMem[dataMemSize] {};
 
 static word_t instMem[instMemSize] {
     0b0000000'00000'00000'000'00001'00100'11,    // addi x1,x0,0    
     0b0000000'00001'00000'000'00010'00100'11,    // addi x2,x0,1    
     0b0000000'01010'00000'000'00011'00100'11,    // addi x3,x0,10   
-    0b0000000'00000'00000'000'00100'00100'11,    // addi x4,x0,0    
+    0b0000000'00000'00000'000'00100'00100'11,    // addi x4,x0,0
 
     0b0000000'00011'00100'000'11000'11000'11,    // beq x4,x3,done  
     0b0000000'00010'00001'000'00101'01100'11,    // add x5,x1,x2    

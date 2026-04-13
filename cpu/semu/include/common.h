@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <string>
+#include <sstream>
 #include <vector>
 #include <functional>
 

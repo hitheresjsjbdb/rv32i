@@ -6,9 +6,11 @@ module IM(InsMemRW, addr,Ins);
     output reg [31:0] Ins;
     reg [31:0] memory[0:1023];
 
+    import "DPI-C" function int instFetch(input int addr);
+
     always @(addr or InsMemRW) begin
         if (InsMemRW) begin
-            Ins <= memory[addr];
+            Ins <= instFetch({22'b0, addr});
         end
     end
 endmodule

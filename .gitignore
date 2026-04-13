@@ -3,3 +3,4 @@
 /chisel-template/.bloop
 /chisel-template/.metals
 /chisel-template/.vscode
+/cpu/build

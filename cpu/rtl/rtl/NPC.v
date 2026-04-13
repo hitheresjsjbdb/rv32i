@@ -24,9 +24,9 @@ assign rs_aligned = {rs[29:0], 2'b0};
 always @(*) begin
     case(NPCOp)
         `NPC_PC      : NPC = PC + 4;
-        `NPC_Offset12 : NPC = $signed({1'b0, PC}) + $signed(Offset13);
+        `NPC_Offset12 : NPC = $signed(PC) + $signed({{19{Offset13[12]}}, Offset13});
         `NPC_rs      : NPC = rs;
-        `NPC_Offset20 : NPC = $signed({1'b0, PC}) + $signed(Offset21);
+        `NPC_Offset20 : NPC = $signed(PC) + $signed({{11{Offset21[20]}}, Offset21});
     endcase
     // Added logic only: keep original case items unchanged, then refine jalr target.
     if (NPCOp == `NPC_rs) begin
@@ -34,5 +34,10 @@ always @(*) begin
     end
     PCA4 = PC + 4;
 end
+
+export "DPI-C" function DPI_getPC;
+function int DPI_getPC();
+    return PC;
+endfunction
 
 endmodule

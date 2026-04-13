@@ -33,4 +33,9 @@ end
 assign RD1 = register[RR1];
 assign RD2 = register[RR2];
 
+export "DPI-C" function DPI_getReg;
+function int DPI_getReg(input int idx);
+  return register[idx];
+endfunction
+
 endmodule

@@ -10,5 +10,6 @@ void instFetch() {
 }
 
 void pcUpdate() {
+    cpu.previousPc = cpu.pc;
     cpu.pc = cpu.dnpc;
 }

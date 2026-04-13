@@ -3,14 +3,19 @@
 #include "cpu/reg.h"
 #include "cpu/cpu.h"
 #include "semu/semu.h"
+#include "exec/exec.h"
+#include "run/run.h"
 
 extern CPU cpu;
 extern SemuStatus semuStatus;
 
 void init() {
     instParsing();
+    initCapstone();
+    sim::reset();
     cpu.pc = 0;
     R(0) = 0;
     semuStatus.state = SEMU::READY;
     semuStatus.numOfInst = 0;
+    semuStatus.numOfCycle = 0;
 }

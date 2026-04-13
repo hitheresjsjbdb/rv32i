@@ -18,11 +18,11 @@ word_t &R(size_t idx) {
 }
 
 void displayRegs() {
-    std::cout << " index | name | value " << std::endl;
-    for (size_t i {}; i < 32; i++) {
-        printf("%6ld |", i);
-        printf("%5s |", regName[i].c_str());
-        printf(" 0x%08x\n", regs[i]);
+    std::cout << " index | name | value \t\t index | name | value " << std::endl;
+    for (size_t i {}; i < 16; i++) {
+        printf("%6ld |%5s | 0x%08x\t%6ld |%5s | 0x%08x\n",
+                i, regName[i].c_str(), regs[i],
+                i+16, regName[i+16].c_str(), regs[i+16]);
     }
     printf("       |   pc | 0x%08x\n", cpu.pc);
 }

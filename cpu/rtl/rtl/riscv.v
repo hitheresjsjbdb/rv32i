@@ -1,4 +1,5 @@
 `timescale 1ns / 1ps
+`include "instruction_def.v"
 //////////////////////////////////////////////////////////////////////////////////
 // Company: 
 // Engineer: 
@@ -18,8 +19,9 @@
 // Additional Comments:
 // 
 //////////////////////////////////////////////////////////////////////////////////
-module riscv(clk, rst);
+module riscv(clk, rst, done);
 input clk, rst;
+output done;
 
 wire RFWrite, DMCtrl, PCWrite, IRWrite, InsMemRW, ExtSel, zero, ALUSrcA;
 wire [1:0] ALUSrcB;
@@ -46,17 +48,17 @@ assign Funct7  = out_ins[31:25];
 assign rs1     = out_ins[19:15];
 assign rs2     = out_ins[24:20];
 assign rd      = out_ins[11:7];
-assign Imm12   = out_ins[31:20];
-assign Offset20 = {out_ins[31],out_ins[19:12],out_ins[20],out_ins[30:21]};
-assign Offset  = (opcode == `INSTR_BTYPE_OP) ? {out_ins[31],out_ins[7],out_ins[30:25],out_ins[11:8]} :
-                 (opcode == `INSTR_SW_OP)  ? {out_ins[31:25],out_ins[11:7]} : Imm12;
+assign Imm12   = out_ins[31:20];    // I-type
+assign Offset20 = {out_ins[31],out_ins[19:12],out_ins[20],out_ins[30:21]};  // J-type
+assign Offset  = (opcode == `INSTR_BTYPE_OP) ? {out_ins[31],out_ins[7],out_ins[30:25],out_ins[11:8]} :  // B-type
+                 (opcode == `INSTR_SW_OP)  ? {out_ins[31:25],out_ins[11:7]} : Imm12;    // S-type
 
 // ÊuÀý»- ControlUnit
 ControlUnit U_ControlUnit(
     .clk(clk), .rst(rst), .zero(zero), .opcode(opcode), .Funct7(Funct7), .Funct3(Funct3),
     .RFWrite(RFWrite), .DMCtrl(DMCtrl), .PCWrite(PCWrite), .IRWrite(IRWrite), .InsMemRW(InsMemRW),
     .ExtSel(ExtSel), .ALUOp(ALUOp), .NPCOp(NPCOp), .ALUSrcA(ALUSrcA),
-    .WDSel(WDSel), .ALUSrcB(ALUSrcB), .RegSel(RegSel)
+    .WDSel(WDSel), .ALUSrcB(ALUSrcB), .RegSel(RegSel), .done(done)
 );
 
 // ÊuÀý»- PC
@@ -66,7 +68,7 @@ PC U_PC (
 
 // ÊuÀý»- NPC
 NPC U_NPC (
-    .PC(PC), .NPCOp(NPCOp), .Offset12(Offset), .Offset20(Offset20), .rs(RD1[31:2]), .PCA4(PCA4), .NPC(NPC)
+    .PC(PC), .NPCOp(NPCOp), .Offset12(Offset), .Offset20(Offset20), .rs({RD1[31:2], 2'b00}), .PCA4(PCA4), .NPC(NPC)
 );
 
 // ÊuÀý»- IM
@@ -114,7 +116,7 @@ EXT U_EXT (
 
 // ÊuÀý»- MUX_2to1_A
 MUX_2to1_A U_MUX_2to1_A (
-    .X(RD1_r), .Y(32'h0), .control(ALUSrcA), .out(A)
+    .X(RD1_r), .Y(5'h0), .control(ALUSrcA), .out(A)
 );
 
 // ÊuÀý»- MUX_2to1_B

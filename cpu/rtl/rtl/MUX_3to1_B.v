@@ -11,7 +11,7 @@ module MUX_3to1_B(X,Y,Z,control,out);
         case(control)
             `ALUSrcB_B     : out = X;
             `ALUSrcB_Imm   : out = Y;
-            `ALUSrcB_Offset: out = $signed(Z);
+            `ALUSrcB_Offset: out = $signed({{20{Z[11]}}, Z});
             `ALUSrcB_else  : out = X;
         endcase
     end
