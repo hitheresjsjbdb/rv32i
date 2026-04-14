@@ -1,4 +1,5 @@
 #include "mem/mem.h"
+#include <fstream>
 
 constexpr word_t dataMemAddrOffset {0U};
 constexpr auto dataMemSize {0x8000U};
@@ -25,6 +26,20 @@ static word_t instMem[instMemSize] {
     0b0000000'00000'00000'000'00000'11000'11,    // beq x0,x0,fail  
     0b0000000'00001'00000'000'00000'11100'11,    // ebreak
 };
+
+bool loadMemFromHex(char * filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cout << "Failed to open " << filename << std::endl;
+        return false;
+    }
+    std::string line;
+    for (size_t i {}; std::getline(file, line); i++) {
+        if (i > instMemSize) return false;
+        instMem[i] = std::stoul(line, nullptr, 16);
+    }
+    return true;
+}
 
 word_t memRead(size_t addr, size_t length) {
     assert(addr < dataMemAddrOffset + dataMemSize && addr >= dataMemAddrOffset);
