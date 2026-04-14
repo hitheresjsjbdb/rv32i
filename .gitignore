@@ -4,3 +4,5 @@
 /chisel-template/.metals
 /chisel-template/.vscode
 /cpu/build
+/cpu/obj_dir
+/cpu/wave.vcd
