@@ -34,7 +34,8 @@ VERILATOR_FLAGS := \
 TARGET := $(BUILD_DIR)/sim
 
 # ===================== 默认目标 =====================
-all: $(TARGET)
+all: clean
+	$(MAKE) $(TARGET)
 
 # ===================== 构建 =====================
 $(TARGET):
@@ -53,7 +54,8 @@ $(TARGET):
 	@mv obj_dir/Vriscv $(TARGET)
 
 # ===================== 运行 =====================
-run: all
+run: clean
+	$(MAKE) $(TARGET)
 	$(TARGET)
 
 # ===================== 清理 =====================

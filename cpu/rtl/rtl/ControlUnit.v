@@ -28,7 +28,7 @@ module ControlUnit(
 
 reg [2:0] State, NxtState;
 reg AR, MEM, WB, EX, RFWrite_tmp;
-assign RFWrite = RFWrite_tmp && (State==`FSMState_WB);
+always @(*) RFWrite = RFWrite_tmp && (State==`FSMState_WB);
 
 assign done = State == `FSMState_IF;
 
