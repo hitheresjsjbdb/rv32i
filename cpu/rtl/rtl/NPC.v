@@ -33,11 +33,11 @@ always @(*) begin
         NPC = (rs_aligned + Imm12Ext) & 32'hffff_fffe;
     end
     PCA4 = PC + 4;
-end
+end 
 
 export "DPI-C" function DPI_getPC;
 function int DPI_getPC();
-    return PC;
+    return NPC;
 endfunction
 
 endmodule

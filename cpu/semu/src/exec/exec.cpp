@@ -45,6 +45,13 @@ bool cpuExec(uint32_t n) {
         sim::exec();
         bool success = cpuExecOnce(n <= 10);
         bool pass = diffTest();
+        if (success == false) {
+            semuStatus.state = SEMU::HALT;
+            std::cout << "Unsupported instruction: ";
+            std::cout << "0x" << std::hex << std::setw(8) << std::setfill('0') << cpu.inst;
+            std::cout << " at pc = " << std::hex << std::setw(8) << std::setfill('0') << cpu.pc << std::endl;
+                return false;   // terminated with error(s)
+        }
         if (pass == false) {
             semuStatus.state = SEMU::HALT;
             printf("Error occurrd at pc = 0x%08x\n\n", cpu.previousPc);
@@ -52,13 +59,6 @@ bool cpuExec(uint32_t n) {
             printf("\n");
             return false;
         }
-        if (success == false) {
-            semuStatus.state = SEMU::HALT;
-            std::cout << "Unsupported instruction: ";
-            std::cout << "0x" << std::hex << std::setw(8) << std::setfill('0') << cpu.inst;
-            std::cout << " at pc = " << std::hex << std::setw(8) << std::setfill('0') << cpu.pc << std::endl;
-                return false;   // terminated with error(s)
-            }
         semuStatus.numOfInst++;
         if (semuStatus.state != SEMU::RUN) return success;  // terminated successfully
     }

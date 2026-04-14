@@ -26,7 +26,7 @@ void sim::tick() {
     dut->eval();
     tfp->dump(sim_time);
     sim_time++;
-    semuStatus.numOfCycle++;
+    semuStatus.numOfCycle++;;
 }
 
 void sim::reset() {
@@ -48,7 +48,6 @@ void sim::exec() {
             exit(EXIT_FAILURE);
         }
     }
-    tick();
 }
 
 void sim::end() {
