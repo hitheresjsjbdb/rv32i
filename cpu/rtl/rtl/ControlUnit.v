@@ -27,7 +27,8 @@ module ControlUnit(
 );
 
 reg [2:0] State, NxtState;
-reg AR, MEM, WB, EX;
+reg AR, MEM, WB, EX, RFWrite_tmp;
+always @(*) RFWrite = RFWrite_tmp && (State==`FSMState_WB);
 
 assign done = State == `FSMState_IF;
 
@@ -41,36 +42,36 @@ always @(posedge clk or posedge rst) begin
     else PCWrite <= NxtState == `FSMState_IF;
 end
 
+always @(*) begin
+    case (State)
+        `FSMState_IF:       NxtState = `FSMState_DECODE;
+        `FSMState_DECODE:   NxtState = EX ? `FSMState_EXEC : AR ? `FSMState_ALUR : MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
+        `FSMState_EXEC:     NxtState = AR ? `FSMState_ALUR : MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
+        `FSMState_ALUR:     NxtState = MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
+        `FSMState_MEM:      NxtState = WB ? `FSMState_WB : `FSMState_IF;
+        `FSMState_WB:       NxtState = `FSMState_IF;
+        default:            NxtState = `FSMState_IF;
+    endcase
+end
+
 // always @(*) begin
 //     case (State)
 //         `FSMState_IF:       NxtState = `FSMState_DECODE;
-//         `FSMState_DECODE:   NxtState = EX ? `FSMState_EXEC : AR ? `FSMState_ALUR : MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
-//         `FSMState_EXEC:     NxtState = AR ? `FSMState_ALUR : MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
-//         `FSMState_ALUR:     NxtState = MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
-//         `FSMState_MEM:      NxtState = WB ? `FSMState_WB : `FSMState_IF;
+//         `FSMState_DECODE:   NxtState = `FSMState_EXEC;
+//         `FSMState_EXEC:     NxtState = `FSMState_ALUR;
+//         `FSMState_ALUR:     NxtState = `FSMState_MEM;
+//         `FSMState_MEM:      NxtState = `FSMState_WB;
 //         `FSMState_WB:       NxtState = `FSMState_IF;
 //         default:            NxtState = `FSMState_IF;
 //     endcase
 // end
 
 always @(*) begin
-    case (State)
-        `FSMState_IF:       NxtState = `FSMState_DECODE;
-        `FSMState_DECODE:   NxtState = `FSMState_EXEC;
-        `FSMState_EXEC:     NxtState = `FSMState_ALUR;
-        `FSMState_ALUR:     NxtState = `FSMState_MEM;
-        `FSMState_MEM:      NxtState = `FSMState_WB;
-        `FSMState_WB:       NxtState = `FSMState_IF;
-        default:            NxtState = `FSMState_IF;
-    endcase
-end
-
-always @(*) begin
     // Safe defaults: sequential fetch, no write-back side effects.
     // PCWrite  = 1'b1;
     InsMemRW = 1'b1;
     IRWrite  = 1'b1;
-    RFWrite  = 1'b0;
+    RFWrite_tmp  = 1'b0;
     AR = 1'b1;
     MEM = 1'b1;
     WB = 1'b1;
@@ -87,7 +88,7 @@ always @(*) begin
     case (opcode)
         // R-type (8): add/sub/and/or/xor/sll/srl/sra
         `INSTR_RTYPE_OP: begin
-            RFWrite = 1'b1;
+            RFWrite_tmp = 1'b1;
             AR = 1'b1;
             WB = 1'b1;
             MEM = 1'b0;
@@ -102,7 +103,7 @@ always @(*) begin
                 `INSTR_SRL_FUNCT: ALUOp = `ALUOp_SRL; // srl
                 `INSTR_SRA_FUNCT: ALUOp = `ALUOp_SRA; // sra
                 default: begin
-                    RFWrite = 1'b0;
+                    RFWrite_tmp = 1'b0;
                     ALUOp   = `ALUOp_ADD;
                 end
             endcase
@@ -110,7 +111,7 @@ always @(*) begin
 
         // I-type ALU immediate (2): addi/ori
         `INSTR_ITYPE_OP: begin
-            RFWrite = 1'b1;
+            RFWrite_tmp = 1'b1;
             ALUSrcB = `ALUSrcB_Imm;
             AR = 1'b1;
             WB = 1'b1;
@@ -128,14 +129,14 @@ always @(*) begin
                     ALUOp  = `ALUOp_OR;
                 end
                 default: begin
-                    RFWrite = 1'b0;
+                    RFWrite_tmp = 1'b0;
                 end
             endcase
         end
 
         // lw
         `INSTR_LW_OP: begin
-            RFWrite = 1'b1;
+            RFWrite_tmp = 1'b1;
             AR = 1'b1;
             WB = 1'b1;
             MEM = 1'b1;
@@ -149,7 +150,7 @@ always @(*) begin
 
         // sw
         `INSTR_SW_OP: begin
-            RFWrite = 1'b0;
+            RFWrite_tmp = 1'b0;
             ExtSel  = `ExtSel_SIGNED;
             ALUSrcB = `ALUSrcB_Offset;
             ALUOp   = `ALUOp_ADD;
@@ -161,7 +162,7 @@ always @(*) begin
 
         // B-type (2): beq/bne
         `INSTR_BTYPE_OP: begin
-            RFWrite = 1'b0;
+            RFWrite_tmp = 1'b0;
             ALUSrcB = `ALUSrcB_B;
             ALUOp   = `ALUOp_SUB;
             AR = 1'b0;
@@ -177,7 +178,7 @@ always @(*) begin
 
         // jal
         `INSTR_JAL_OP: begin
-            RFWrite = 1'b1;
+            RFWrite_tmp = 1'b1;
             NPCOp   = `NPC_Offset20;
             WDSel   = `WDSel_FromPC;
             AR = 1'b0;
@@ -188,7 +189,7 @@ always @(*) begin
 
         // jalr
         `INSTR_JALR_OP: begin
-            RFWrite = 1'b1;
+            RFWrite_tmp = 1'b1;
             ExtSel  = `ExtSel_SIGNED;
             ALUSrcB = `ALUSrcB_Imm;
             ALUOp   = `ALUOp_ADD;
