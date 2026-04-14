@@ -45,7 +45,7 @@ end
 always @(*) begin
     case (State)
         `FSMState_IF:       NxtState = `FSMState_DECODE;
-        `FSMState_DECODE:   NxtState = EX ? `FSMState_EXEC : AR ? `FSMState_ALUR : MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
+        `FSMState_DECODE:   NxtState = `FSMState_EXEC;
         `FSMState_EXEC:     NxtState = AR ? `FSMState_ALUR : MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
         `FSMState_ALUR:     NxtState = MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
         `FSMState_MEM:      NxtState = WB ? `FSMState_WB : `FSMState_IF;
