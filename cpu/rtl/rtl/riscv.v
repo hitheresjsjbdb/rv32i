@@ -29,9 +29,24 @@ wire done_cu;
 reg done_r;
 assign done = done_r;
 
+wire bp_predict_taken;
+wire [31:0] bp_predict_npc;
+wire bp_update_valid;
+wire [31:0] bp_update_pc;
+wire bp_update_taken;
+localparam BP_BHT_ENTRIES = 64;
+localparam BP_BHT_IDX_W = 6;
+reg bp_bht [0:BP_BHT_ENTRIES-1];
+integer bp_i;
+wire [BP_BHT_IDX_W-1:0] bp_fetch_idx;
+wire [BP_BHT_IDX_W-1:0] bp_update_idx;
+wire bp_fetch_is_branch;
+wire [31:0] bp_fetch_branch_imm;
+
 // IF/ID stage metadata (instruction is held in out_ins by IR)
 reg ifid_valid;
 reg [31:0] ifid_pc;
+reg ifid_pred_taken;
 
 // ID/EX
 reg idex_valid;
@@ -58,6 +73,7 @@ reg        idex_IsBranch;
 reg        idex_IsJal;
 reg        idex_IsJalr;
 reg        idex_IsEbreak;
+reg        idex_pred_taken;
 
 // EX/MEM
 reg        exmem_valid;
@@ -106,6 +122,13 @@ wire [31:0] ImmB32;
 wire [31:0] ImmJ32;
 assign ImmB32 = {{19{out_ins[31]}}, out_ins[31], out_ins[7], out_ins[30:25], out_ins[11:8], 1'b0};
 assign ImmJ32 = {{11{out_ins[31]}}, out_ins[31], out_ins[19:12], out_ins[20], out_ins[30:21], 1'b0};
+
+assign bp_fetch_idx = PC[BP_BHT_IDX_W+1:2];
+assign bp_update_idx = bp_update_pc[BP_BHT_IDX_W+1:2];
+assign bp_fetch_is_branch = (in_ins[6:0] == `INSTR_BTYPE_OP);
+assign bp_fetch_branch_imm = {{19{in_ins[31]}}, in_ins[31], in_ins[7], in_ins[30:25], in_ins[11:8], 1'b0};
+assign bp_predict_taken = bp_fetch_is_branch ? bp_bht[bp_fetch_idx] : 1'b0;
+assign bp_predict_npc = bp_predict_taken ? (PC + bp_fetch_branch_imm) : (PC + 32'd4);
 
 // No-forwarding policy: stall decode on any RAW with in-flight writers.
 wire id_use_rs1;
@@ -164,24 +187,31 @@ assign ex_branch_cond = (idex_funct3 == `INSTR_BEQ_FUNCT) ? zero :
 wire ex_take_branch;
 wire [31:0] ex_branch_target;
 wire [31:0] ex_dnpc;
+wire [31:0] ex_recover_npc;
+wire ex_mispredict;
 assign ex_take_branch  = idex_valid && (idex_IsJal || idex_IsJalr || (idex_IsBranch && ex_branch_cond));
 assign ex_branch_target = idex_IsJalr ? ((idex_rs1_val + idex_npc_imm) & 32'hffff_fffe)
                                       : (idex_pc + idex_npc_imm);
-assign ex_dnpc = ex_take_branch ? ex_branch_target : (idex_pc + 32'd4);
+assign ex_recover_npc = ex_take_branch ? ex_branch_target : (idex_pc + 32'd4);
+assign ex_dnpc = ex_recover_npc;
+assign ex_mispredict = idex_valid && (ex_take_branch ^ idex_pred_taken);
 
 wire mem_hold;
 wire ex_can_advance;
 wire ex_branch_commit;
 assign mem_hold = exmem_valid && exmem_MemRead && exmem_load_wait;
 assign ex_can_advance = ~mem_hold;
-assign ex_branch_commit = ex_can_advance && ex_take_branch;
+assign ex_branch_commit = ex_can_advance && ex_mispredict;
+assign bp_update_valid = ex_can_advance && idex_valid && idex_IsBranch;
+assign bp_update_pc = idex_pc;
+assign bp_update_taken = ex_branch_cond;
 
 wire [31:0] NPC_next;
 wire PCWrite_eff;
 wire IRWrite_eff;
 wire InsMemRW_eff;
 
-assign NPC_next = ex_branch_commit ? ex_branch_target : (PC + 32'd4);
+assign NPC_next = ex_branch_commit ? ex_recover_npc : bp_predict_npc;
 assign PCWrite_eff = PCWrite && (ex_branch_commit || (!id_stall && !mem_hold));
 assign IRWrite_eff = IRWrite && (!id_stall) && (!mem_hold) && (!ex_branch_commit);
 assign InsMemRW_eff = InsMemRW;
@@ -277,11 +307,16 @@ assign DR_out = RD;
 
 always @(posedge clk or posedge rst) begin
     if (rst) begin
+        for (bp_i = 0; bp_i < BP_BHT_ENTRIES; bp_i = bp_i + 1) begin
+            bp_bht[bp_i] <= 1'b0;
+        end
+
         done_r <= 1'b0;
         commit_dnpc <= 32'h0000_2000;
 
         ifid_valid <= 1'b0;
         ifid_pc <= 32'b0;
+        ifid_pred_taken <= 1'b0;
 
         idex_valid <= 1'b0;
         idex_pc <= 32'b0;
@@ -307,6 +342,7 @@ always @(posedge clk or posedge rst) begin
         idex_IsJal <= 1'b0;
         idex_IsJalr <= 1'b0;
         idex_IsEbreak <= 1'b0;
+        idex_pred_taken <= 1'b0;
 
         exmem_valid <= 1'b0;
         exmem_alu_result <= 32'b0;
@@ -334,6 +370,10 @@ always @(posedge clk or posedge rst) begin
         memwb_IsEbreak <= 1'b0;
     end
     else begin
+        if (bp_update_valid) begin
+            bp_bht[bp_update_idx] <= bp_update_taken;
+        end
+
         done_r <= memwb_valid;
         if (memwb_valid) begin
             commit_dnpc <= memwb_dnpc;
@@ -429,6 +469,7 @@ always @(posedge clk or posedge rst) begin
                 idex_IsJal <= 1'b0;
                 idex_IsJalr <= 1'b0;
                 idex_IsEbreak <= 1'b0;
+                idex_pred_taken <= 1'b0;
             end
             else begin
                 idex_valid <= 1'b1;
@@ -457,6 +498,7 @@ always @(posedge clk or posedge rst) begin
                 idex_IsJal <= (opcode == `INSTR_JAL_OP);
                 idex_IsJalr <= (opcode == `INSTR_JALR_OP);
                 idex_IsEbreak <= (out_ins == 32'h0010_0073);
+                idex_pred_taken <= ifid_pred_taken;
             end
         end
 
@@ -464,10 +506,12 @@ always @(posedge clk or posedge rst) begin
         if (ex_branch_commit) begin
             ifid_valid <= 1'b0;
             ifid_pc <= 32'b0;
+            ifid_pred_taken <= 1'b0;
         end
         else if (IRWrite_eff) begin
             ifid_valid <= 1'b1;
             ifid_pc <= PC;
+            ifid_pred_taken <= bp_predict_taken;
         end
     end
 end
