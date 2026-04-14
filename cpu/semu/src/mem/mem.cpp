@@ -1,7 +1,6 @@
 #include "mem/mem.h"
 #include <fstream>
 
-constexpr word_t dataMemAddrOffset {0U};
 constexpr auto dataMemSize {0x8000U};
 constexpr auto instMemSize {0x8000U};
 
@@ -66,8 +65,8 @@ void memWrite(size_t addr, word_t data, size_t length) {
 }
 
 word_t instRead(size_t addr) {
-    assert(addr < instMemSize);
+    assert(addr < instMemSize + instMemAddrOffset && addr >= instMemAddrOffset);
     uint8_t *p {reinterpret_cast<uint8_t*>(instMem)};
-    p += addr;
+    p += (addr - instMemAddrOffset);
     return *reinterpret_cast<word_t*>(p);
 }

@@ -12,7 +12,7 @@ module PC(clk, rst, PCWrite, NPC, PC);
 
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        PC <= 32'h0000_0000;
+        PC <= 32'h0000_2000;
     end
     else if (PCWrite) begin
         PC <= NPC;

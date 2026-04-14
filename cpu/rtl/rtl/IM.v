@@ -10,7 +10,7 @@ module IM(InsMemRW, addr,Ins);
 
     always @(addr or InsMemRW) begin
         if (InsMemRW) begin
-            Ins <= instFetch({22'b0, addr});
+            Ins <= instFetch({20'h00002, addr, 2'b00});
         end
     end
 endmodule

@@ -2,6 +2,7 @@
 #include "isa/decoder.h"
 #include "cpu/reg.h"
 #include "cpu/cpu.h"
+#include "mem/mem.h"
 #include "semu/semu.h"
 #include "exec/exec.h"
 #include "run/run.h"
@@ -13,7 +14,7 @@ void init() {
     instParsing();
     initCapstone();
     sim::reset();
-    cpu.pc = 0;
+    cpu.pc = instMemAddrOffset;
     R(0) = 0;
     semuStatus.state = SEMU::READY;
     semuStatus.numOfInst = 0;

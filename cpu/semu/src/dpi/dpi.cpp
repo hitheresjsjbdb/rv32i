@@ -17,5 +17,5 @@ word_t sim::getPC() {
 }
 
 int instFetch(int addr) {
-    return instRead(addr << 2);
+    return instRead(addr);
 }
