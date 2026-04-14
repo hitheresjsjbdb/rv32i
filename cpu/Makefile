@@ -30,12 +30,14 @@ VERILATOR_FLAGS := \
 	-I$(RTL_INC) \
 	-I$(RTL_DIR)
 
+IMG ?= code.hex
+
 # ===================== 目标 =====================
 TARGET := $(BUILD_DIR)/sim
 
 # ===================== 默认目标 =====================
 all: clean
-	$(MAKE) $(TARGET)
+	$(MAKE) run
 
 # ===================== 构建 =====================
 $(TARGET):
@@ -49,14 +51,12 @@ $(TARGET):
 		$(SEMU_SRCS) \
 		-CFLAGS "$(CXXFLAGS)" \
 		-LDFLAGS "$(LDFLAGS)"
-		-o sim
 
 	@mv obj_dir/Vriscv $(TARGET)
 
 # ===================== 运行 =====================
-run: clean
-	$(MAKE) $(TARGET)
-	$(TARGET)
+run: $(TARGET)
+	$(TARGET) $(IMG)
 
 # ===================== 清理 =====================
 clean:

@@ -46,7 +46,7 @@ always @(*) begin
     case (State)
         `FSMState_IF:       NxtState = `FSMState_DECODE;
         `FSMState_DECODE:   NxtState = `FSMState_EXEC;
-        `FSMState_EXEC:     NxtState = AR ? `FSMState_ALUR : MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
+        `FSMState_EXEC:     NxtState = MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
         `FSMState_ALUR:     NxtState = MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
         `FSMState_MEM:      NxtState = WB ? `FSMState_WB : `FSMState_IF;
         `FSMState_WB:       NxtState = `FSMState_IF;
@@ -154,7 +154,7 @@ always @(*) begin
             ExtSel  = `ExtSel_SIGNED;
             ALUSrcB = `ALUSrcB_Offset;
             ALUOp   = `ALUOp_ADD;
-            DMCtrl  = `DMCtrl_WR;
+            DMCtrl  = (State == `FSMState_MEM) ? `DMCtrl_WR : `DMCtrl_RD;
             AR = 1'b1;
             WB = 1'b0;
             MEM = 1'b1;

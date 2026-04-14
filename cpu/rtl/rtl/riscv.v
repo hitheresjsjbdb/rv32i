@@ -116,12 +116,12 @@ EXT U_EXT (
 
 // ÊuÀý»- MUX_2to1_A
 MUX_2to1_A U_MUX_2to1_A (
-    .X(RD1_r), .Y(5'h0), .control(ALUSrcA), .out(A)
+    .X(RD1), .Y(5'h0), .control(ALUSrcA), .out(A)
 );
 
 // ÊuÀý»- MUX_2to1_B
 MUX_3to1_B U_MUX_3to1_B (
-    .X(RD2_r), .Y(Imm32), .Z(Offset), .control(ALUSrcB), .out(B)
+    .X(RD2), .Y(Imm32), .Z(Offset), .control(ALUSrcB), .out(B)
 );
 
 // ÊuÀý»- ALU
@@ -136,7 +136,7 @@ Flopr U_ALUOut (
 
 // ÊuÀý»- DM
 DM U_DM (
-    .Addr(ALU_result_r[11:2]), .WD(RD2_r), .DMCtrl(DMCtrl), .clk(clk), .RD(RD)
+    .Addr(ALU_result_r[11:2]), .WD(RD2), .DMCtrl(DMCtrl), .clk(clk), .RD(RD)
 );
 
 //// ÊuÀý»- Flopr
