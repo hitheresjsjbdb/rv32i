@@ -67,7 +67,7 @@ always @(*) begin
                     ALUOp  = `ALUOp_ADD;
                 end
                 `INSTR_ORI_FUNCT: begin
-                    ExtSel = `ExtSel_ZERO;
+                    ExtSel = `ExtSel_SIGNED;
                     ALUOp  = `ALUOp_OR;
                 end
                 default: RFWrite = 1'b0;

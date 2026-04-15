@@ -34,6 +34,7 @@ wire [31:0] bp_predict_npc;
 wire bp_update_valid;
 wire [31:0] bp_update_pc;
 wire bp_update_taken;
+wire bp_report_valid;
 localparam BP_BHT_ENTRIES = 64;
 localparam BP_BHT_IDX_W = 6;
 reg bp_bht [0:BP_BHT_ENTRIES-1];
@@ -190,7 +191,8 @@ wire [31:0] ex_dnpc;
 wire [31:0] ex_recover_npc;
 wire ex_mispredict;
 assign ex_take_branch  = idex_valid && (idex_IsJal || idex_IsJalr || (idex_IsBranch && ex_branch_cond));
-assign ex_branch_target = idex_IsJalr ? ((idex_rs1_val + idex_npc_imm) & 32'hffff_fffe)
+// For JALR, branch target must use EX-forwarded rs1 to avoid RAW hazards.
+assign ex_branch_target = idex_IsJalr ? ((ex_rs1_fwd + idex_npc_imm) & 32'hffff_fffe)
                                       : (idex_pc + idex_npc_imm);
 assign ex_recover_npc = ex_take_branch ? ex_branch_target : (idex_pc + 32'd4);
 assign ex_dnpc = ex_recover_npc;
@@ -205,6 +207,7 @@ assign ex_branch_commit = ex_can_advance && ex_mispredict;
 assign bp_update_valid = ex_can_advance && idex_valid && idex_IsBranch;
 assign bp_update_pc = idex_pc;
 assign bp_update_taken = ex_branch_cond;
+assign bp_report_valid = memwb_valid && memwb_IsEbreak;
 
 wire [31:0] NPC_next;
 wire PCWrite_eff;
@@ -230,6 +233,14 @@ ControlUnit U_ControlUnit(
     .RFWrite(RFWrite), .DMCtrl(DMCtrl), .PCWrite(PCWrite), .IRWrite(IRWrite), .InsMemRW(InsMemRW),
     .ExtSel(ExtSel), .ALUOp(ALUOp), .NPCOp(NPCOp), .ALUSrcA(ALUSrcA),
     .WDSel(WDSel), .ALUSrcB(ALUSrcB), .RegSel(RegSel), .done(done_cu)
+);
+
+BPStats U_BPStats(
+    .clk(clk),
+    .rst(rst),
+    .branch_valid(bp_update_valid),
+    .branch_miss(bp_update_valid && ex_mispredict),
+    .report_valid(bp_report_valid)
 );
 
 PC U_PC (
