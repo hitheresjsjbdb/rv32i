@@ -9,12 +9,13 @@ module IM(clk, InsMemRW, addr,Ins);
 
     import "DPI-C" function int instFetch(input int addr);
 
-    always @(*) begin
+    // Instruction memory read is synchronous to clk (negedge).
+    always @(negedge clk) begin
         if (InsMemRW) begin
-            Ins = instFetch({20'h00002, addr, 2'b00});
+            Ins <= instFetch({20'h00002, addr, 2'b00});
         end
         else begin
-            Ins = 32'b0;
+            Ins <= 32'b0;
         end
     end
 endmodule

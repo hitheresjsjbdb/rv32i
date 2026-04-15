@@ -44,10 +44,11 @@ wire [BP_BHT_IDX_W-1:0] bp_update_idx;
 wire bp_fetch_is_branch;
 wire [31:0] bp_fetch_branch_imm;
 
-// IF/ID stage metadata (instruction is held in out_ins by IR)
+// IF/ID stage metadata and decoded instruction register.
 reg ifid_valid;
 reg [31:0] ifid_pc;
 reg ifid_pred_taken;
+reg [31:0] ifid_ins;
 
 // ID/EX
 reg idex_valid;
@@ -108,28 +109,30 @@ reg [31:0] commit_dnpc;
 wire [31:0] commit_pc_for_npc;
 assign commit_pc_for_npc = commit_dnpc - 32'd4;
 
-assign opcode  = out_ins[6:0];
-assign Funct3  = out_ins[14:12];
-assign Funct7  = out_ins[31:25];
-assign rs1     = out_ins[19:15];
-assign rs2     = out_ins[24:20];
-assign rd      = out_ins[11:7];
-assign Imm12   = out_ins[31:20];
-assign Offset20 = {out_ins[31], out_ins[19:12], out_ins[20], out_ins[30:21]};
-assign Offset  = (opcode == `INSTR_BTYPE_OP) ? {out_ins[31], out_ins[7], out_ins[30:25], out_ins[11:8]} :
-                 (opcode == `INSTR_SW_OP)    ? {out_ins[31:25], out_ins[11:7]} : Imm12;
+assign opcode  = ifid_ins[6:0];
+assign Funct3  = ifid_ins[14:12];
+assign Funct7  = ifid_ins[31:25];
+assign rs1     = ifid_ins[19:15];
+assign rs2     = ifid_ins[24:20];
+assign rd      = ifid_ins[11:7];
+assign Imm12   = ifid_ins[31:20];
+assign Offset20 = {ifid_ins[31], ifid_ins[19:12], ifid_ins[20], ifid_ins[30:21]};
+assign Offset  = (opcode == `INSTR_BTYPE_OP) ? {ifid_ins[31], ifid_ins[7], ifid_ins[30:25], ifid_ins[11:8]} :
+                 (opcode == `INSTR_SW_OP)    ? {ifid_ins[31:25], ifid_ins[11:7]} : Imm12;
 
 wire [31:0] ImmB32;
 wire [31:0] ImmJ32;
-assign ImmB32 = {{19{out_ins[31]}}, out_ins[31], out_ins[7], out_ins[30:25], out_ins[11:8], 1'b0};
-assign ImmJ32 = {{11{out_ins[31]}}, out_ins[31], out_ins[19:12], out_ins[20], out_ins[30:21], 1'b0};
+assign ImmB32 = {{19{ifid_ins[31]}}, ifid_ins[31], ifid_ins[7], ifid_ins[30:25], ifid_ins[11:8], 1'b0};
+assign ImmJ32 = {{11{ifid_ins[31]}}, ifid_ins[31], ifid_ins[19:12], ifid_ins[20], ifid_ins[30:21], 1'b0};
 
 assign bp_fetch_idx = PC[BP_BHT_IDX_W+1:2];
 assign bp_update_idx = bp_update_pc[BP_BHT_IDX_W+1:2];
-assign bp_fetch_is_branch = (in_ins[6:0] == `INSTR_BTYPE_OP);
-assign bp_fetch_branch_imm = {{19{in_ins[31]}}, in_ins[31], in_ins[7], in_ins[30:25], in_ins[11:8], 1'b0};
-assign bp_predict_taken = bp_fetch_is_branch ? bp_bht[bp_fetch_idx] : 1'b0;
-assign bp_predict_npc = bp_predict_taken ? (PC + bp_fetch_branch_imm) : (PC + 32'd4);
+// With synchronous IM, instruction and current PC are not aligned in the same cycle.
+// Use static not-taken fetch policy to keep control-flow timing correct.
+assign bp_fetch_is_branch = 1'b0;
+assign bp_fetch_branch_imm = 32'b0;
+assign bp_predict_taken = 1'b0;
+assign bp_predict_npc = PC + 32'd4;
 
 // No-forwarding policy: stall decode on any RAW with in-flight writers.
 wire id_use_rs1;
@@ -328,6 +331,7 @@ always @(posedge clk or posedge rst) begin
         ifid_valid <= 1'b0;
         ifid_pc <= 32'b0;
         ifid_pred_taken <= 1'b0;
+        ifid_ins <= 32'b0;
 
         idex_valid <= 1'b0;
         idex_pc <= 32'b0;
@@ -508,7 +512,7 @@ always @(posedge clk or posedge rst) begin
                 idex_IsBranch <= (opcode == `INSTR_BTYPE_OP);
                 idex_IsJal <= (opcode == `INSTR_JAL_OP);
                 idex_IsJalr <= (opcode == `INSTR_JALR_OP);
-                idex_IsEbreak <= (out_ins == 32'h0010_0073);
+                idex_IsEbreak <= (ifid_ins == 32'h0010_0073);
                 idex_pred_taken <= ifid_pred_taken;
             end
         end
@@ -518,11 +522,13 @@ always @(posedge clk or posedge rst) begin
             ifid_valid <= 1'b0;
             ifid_pc <= 32'b0;
             ifid_pred_taken <= 1'b0;
+            ifid_ins <= 32'b0;
         end
         else if (IRWrite_eff) begin
             ifid_valid <= 1'b1;
             ifid_pc <= PC;
             ifid_pred_taken <= bp_predict_taken;
+            ifid_ins <= out_ins;
         end
     end
 end
