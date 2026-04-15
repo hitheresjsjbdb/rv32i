@@ -259,7 +259,7 @@ NPC U_NPC (
 );
 
 IM U_IM (
-    .addr(PC[11:2]), .Ins(in_ins), .InsMemRW(InsMemRW_eff)
+    .clk(clk), .addr(PC[11:2]), .Ins(in_ins), .InsMemRW(InsMemRW_eff)
 );
 
 IR U_IR (
