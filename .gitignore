@@ -6,3 +6,5 @@
 /cpu/build
 /cpu/obj_dir
 /cpu/*.vcd
+rv32i/cpu/rtl
+rv32i/utils
