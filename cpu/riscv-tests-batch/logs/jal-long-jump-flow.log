@@ -1,0 +1,12 @@
+(sdb) c
+Reg check failed: DUT's reg[6] = 0x00000003, while SEMU's reg[6] = 0x00000000
+Reg check failed: DUT's reg[10] = 0x00000000, while SEMU's reg[10] = 0x00002008
+Error occurrd at pc = 0x00002018
+
+0x00002018:	add	a0, ra, zero
+
+SEMU terminated with errors
+3 instruction(s) were executed
+Executed 14 clock cycle(s)
+CPI: 4.66667
+(sdb) q

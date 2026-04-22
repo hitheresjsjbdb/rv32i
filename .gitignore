@@ -6,3 +6,4 @@
 /cpu/build
 /cpu/obj_dir
 /cpu/*.vcd
+cpu/riscv-tests-batch/summary.txt

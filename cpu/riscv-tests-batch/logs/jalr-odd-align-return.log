@@ -1,0 +1,11 @@
+(sdb) c
+Reg check failed: DUT's reg[5] = 0x00000002, while SEMU's reg[5] = 0x00000001
+Error occurrd at pc = 0x00002020
+
+0x00002020:	addi	t0, t0, 1
+
+SEMU terminated with errors
+2 instruction(s) were executed
+Executed 13 clock cycle(s)
+CPI: 6.5
+(sdb) q

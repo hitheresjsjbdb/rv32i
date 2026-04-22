@@ -1,0 +1,11 @@
+(sdb) c
+Reg check failed: DUT's reg[1] = 0x00002054, while SEMU's reg[1] = 0x00002058
+Error occurrd at pc = 0x00002054
+
+0x00002054:	jal	0x20
+
+SEMU terminated with errors
+174 instruction(s) were executed
+Executed 424 clock cycle(s)
+CPI: 2.43678
+(sdb) q
