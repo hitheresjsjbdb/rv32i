@@ -1,11 +1,6 @@
 (sdb) c
-Reg check failed: DUT's reg[25] = 0x00000000, while SEMU's reg[25] = 0x0000001c
-Error occurrd at pc = 0x00002038
-
-0x00002038:	addi	s9, zero, 0x1c
-
-SEMU terminated with errors
-29 instruction(s) were executed
-Executed 66 clock cycle(s)
-CPI: 2.27586
+SEMU terminated successfully
+34 instruction(s) were executed
+Executed 77 clock cycle(s)
+CPI: 2.26471
 (sdb) q

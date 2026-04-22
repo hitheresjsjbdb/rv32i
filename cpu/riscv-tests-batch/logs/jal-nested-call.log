@@ -1,11 +1,6 @@
 (sdb) c
-Reg check failed: DUT's reg[1] = 0x00002008, while SEMU's reg[1] = 0x00002024
-Error occurrd at pc = 0x00002034
-
-0x00002034:	ret	
-
-SEMU terminated with errors
-6 instruction(s) were executed
-Executed 18 clock cycle(s)
-CPI: 3
+SEMU terminated successfully
+15 instruction(s) were executed
+Executed 35 clock cycle(s)
+CPI: 2.33333
 (sdb) q

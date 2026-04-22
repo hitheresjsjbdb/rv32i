@@ -29,20 +29,20 @@ assign RS  = (NPCOp == `NPC_rs);
 assign o20 = (NPCOp == `NPC_Offset20);
 
 always @(*) begin
-    // case(NPCOp)
-    //     `NPC_PC      : NPC = PC + 4;
-    //     `NPC_Offset12 : NPC = $signed(PC) + $signed({{19{Offset13[12]}}, Offset13});
-    //     `NPC_rs      : NPC = rs;
-    //     `NPC_Offset20 : NPC = $signed(PC) + $signed({{11{Offset21[20]}}, Offset21});
-    // endcase
-    // // Added logic only: keep original case items unchanged, then refine jalr target.
-    // if (NPCOp == `NPC_rs) begin
-    //     NPC = (rs_aligned + Imm12Ext) & 32'hffff_fffe;
-    // end
-    NPC = ({32{pc}}  & (PC + 4)) |
-          ({32{o12}} & ($signed(PC) + $signed({{19{Offset13[12]}}, Offset13}))) |
-          ({32{RS}}  & ((rs_aligned + Imm12Ext) & 32'hffff_fffe)) |
-          ({32{o20}} & ($signed(PC) + $signed({{11{Offset21[20]}}, Offset21})));
+    case(NPCOp)
+        `NPC_PC      : NPC = PC + 4;
+        `NPC_Offset12 : NPC = $signed(PC) + $signed({{19{Offset13[12]}}, Offset13});
+        `NPC_rs      : NPC = rs;
+        `NPC_Offset20 : NPC = $signed(PC) + $signed({{11{Offset21[20]}}, Offset21});
+    endcase
+    // Added logic only: keep original case items unchanged, then refine jalr target.
+    if (NPCOp == `NPC_rs) begin
+        NPC = (rs_aligned + Imm12Ext) & 32'hffff_fffe;
+    end
+    // NPC = ({32{pc}}  & (PC + 4)) |
+    //       ({32{o12}} & ($signed(PC) + $signed({{19{Offset13[12]}}, Offset13}))) |
+    //       ({32{RS}}  & ((rs_aligned + Imm12Ext) & 32'hffff_fffe)) |
+    //       ({32{o20}} & ($signed(PC) + $signed({{11{Offset21[20]}}, Offset21})));
 
     PCA4 = PC + 4;
 end
