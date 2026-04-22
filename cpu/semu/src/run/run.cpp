@@ -38,16 +38,17 @@ void sim::reset() {
     tick();
 }
 
-void sim::exec() {
+bool sim::exec() {
     int i {};
     for (int i {}; ; i++) {
         tick();
         if (dut->done) break;
         if (i > 10) {
             std::cout << "DUT failed to execute" << std::endl;
-            exit(EXIT_FAILURE);
+            return false;
         }
     }
+    return true;
 }
 
 void sim::end() {

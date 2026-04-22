@@ -42,7 +42,10 @@ bool cpuExecOnce(bool flag) {
 bool cpuExec(uint32_t n) {
     assert(n != 0);
     for (uint32_t i {}; i < n; i++) {
-        sim::exec();
+        if (sim::exec() == false) {
+            semuStatus.state = SEMU::HALT;
+            return false;
+        }
         bool success = cpuExecOnce(n <= 10);
         bool pass = diffTest();
         if (success == false) {

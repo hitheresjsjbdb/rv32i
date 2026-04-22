@@ -16,3 +16,21 @@ module Flopr(clk, rst, in_data, out_data);
     end
 
 endmodule
+
+module Reg #(parameter WIDTH = 32)(clk, rst, en, in, out);
+
+    input                  clk;
+    input                  rst;
+    input                  en;
+    input      [WIDTH-1:0] in;
+    output reg [WIDTH-1:0] out;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            out <= {WIDTH{1'b0}};
+        end else begin
+            out <= en ? in : out;
+        end
+    end
+
+endmodule

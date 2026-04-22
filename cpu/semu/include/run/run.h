@@ -6,6 +6,6 @@ namespace sim {
     void waveInit(std::string wavePath);
     void tick();
     void reset();
-    void exec();
+    bool exec();
     void end();
 }

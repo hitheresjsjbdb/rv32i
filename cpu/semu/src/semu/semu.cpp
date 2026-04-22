@@ -20,6 +20,10 @@ void semuLoop(uint32_t n) {
         std::cout << "CPI: " << static_cast<double>(semuStatus.numOfCycle) / static_cast<double>(semuStatus.numOfInst) << std::endl;
     }
     else if (semuStatus.state == SEMU::HALT && success == false) {
+        sim::tick();
+        sim::tick();
+        sim::tick();
+        sim::tick();
         sim::end();
         std::cout << "SEMU terminated with errors" << std::endl;
         std::cout << semuStatus.numOfInst << " instruction(s) were executed" << std::endl;

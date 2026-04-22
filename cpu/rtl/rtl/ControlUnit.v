@@ -4,6 +4,7 @@
 `include "instruction_def.v"
 
 module ControlUnit(
+    // control signal
     input rst,
     input clk,
     input zero,
@@ -23,44 +24,34 @@ module ControlUnit(
     output reg [1:0] WDSel,
     output reg [3:0] ALUOp,
 
-    output done
+    output reg branch,
+    output reg [1:0] ID_NPCOp
+
 );
 
 reg [2:0] State, NxtState;
 reg AR, MEM, WB, EX, RFWrite_tmp;
-always @(*) RFWrite = RFWrite_tmp && (State==`FSMState_WB);
+always @(*) RFWrite = RFWrite_tmp;
 
-assign done = State == `FSMState_IF;
+// assign done = State == `FSMState_IF;
 
-always @(posedge clk or posedge rst) begin
-    if (rst) State <= `FSMState_IF;
-    else State <= NxtState;
-end
+// always @(posedge clk or posedge rst) begin
+//     if (rst) State <= `FSMState_IF;
+//     else State <= NxtState;
+// end
 
-always @(posedge clk or posedge rst) begin
-    if (rst) PCWrite <= 1'b0;
-    else PCWrite <= NxtState == `FSMState_IF;
-end
-
-always @(*) begin
-    case (State)
-        `FSMState_IF:       NxtState = `FSMState_DECODE;
-        `FSMState_DECODE:   NxtState = `FSMState_EXEC;
-        `FSMState_EXEC:     NxtState = AR ? `FSMState_ALUR : MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
-        `FSMState_ALUR:     NxtState = MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
-        `FSMState_MEM:      NxtState = WB ? `FSMState_WB : `FSMState_IF;
-        `FSMState_WB:       NxtState = `FSMState_IF;
-        default:            NxtState = `FSMState_IF;
-    endcase
-end
+// always @(posedge clk or posedge rst) begin
+//     if (rst) PCWrite <= 1'b0;
+//     else PCWrite <= NxtState == `FSMState_IF;
+// end
 
 // always @(*) begin
 //     case (State)
 //         `FSMState_IF:       NxtState = `FSMState_DECODE;
 //         `FSMState_DECODE:   NxtState = `FSMState_EXEC;
-//         `FSMState_EXEC:     NxtState = `FSMState_ALUR;
-//         `FSMState_ALUR:     NxtState = `FSMState_MEM;
-//         `FSMState_MEM:      NxtState = `FSMState_WB;
+//         `FSMState_EXEC:     NxtState = AR ? `FSMState_ALUR : MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
+//         `FSMState_ALUR:     NxtState = MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
+//         `FSMState_MEM:      NxtState = WB ? `FSMState_WB : `FSMState_IF;
 //         `FSMState_WB:       NxtState = `FSMState_IF;
 //         default:            NxtState = `FSMState_IF;
 //     endcase
@@ -68,7 +59,7 @@ end
 
 always @(*) begin
     // Safe defaults: sequential fetch, no write-back side effects.
-    // PCWrite  = 1'b1;
+    PCWrite  = 1'b1;
     InsMemRW = 1'b1;
     IRWrite  = 1'b1;
     RFWrite_tmp  = 1'b0;
@@ -206,5 +197,42 @@ always @(*) begin
         end
     endcase
 end
+
+wire [6:0] ID_opcode;
+wire [2:0] ID_Funct3;
+
+
+Reg #(7) U_Reg_opcode (clk, rst, 1'b1, opcode, ID_opcode);
+Reg #(3) U_Reg_Funct3 (clk, rst, 1'b1, Funct3, ID_Funct3);
+
+always @(*) begin
+    case (ID_opcode)
+        `INSTR_BTYPE_OP: begin
+            case (ID_Funct3)
+                `INSTR_BEQ_FUNCT: ID_NPCOp = zero ? `NPC_Offset12 : `NPC_PC; // beq
+                `INSTR_BNE_FUNCT: ID_NPCOp = zero ? `NPC_PC : `NPC_Offset12; // bne
+                default: ID_NPCOp = `NPC_PC;
+            endcase
+        end
+
+        // jal
+        `INSTR_JAL_OP: begin
+            ID_NPCOp   = `NPC_Offset20;
+        end
+
+        // jalr
+        `INSTR_JALR_OP: begin
+            ID_NPCOp   = `NPC_rs;
+        end
+
+        default: begin
+            ID_NPCOp = `NPC_PC;
+        end
+    endcase
+    
+    branch = (ID_NPCOp != `NPC_PC);
+
+end
+
 
 endmodule
