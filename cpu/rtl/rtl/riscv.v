@@ -94,14 +94,14 @@ wire [4:0]  WB_rd;
 wire        WB_RFWrite;
 wire        WB_done;
 
-wire cu_zero;
+wire        cu_zero;
 
 
 
 // ÊuÀý»- ControlUnit
 ControlUnit U_ControlUnit(
     /* input */
-    .clk(clk), .rst(rst), .zero(cu_zero), .opcode(opcode), .Funct7(Funct7), .Funct3(Funct3),
+    .clk(clk), .rst(rst), .zero(cu_zero), .opcode(ID_branch ? 7'b0 : opcode), .Funct7(Funct7), .Funct3(Funct3),
     .bubble(IF_bubble),
 
     /* output */
@@ -118,13 +118,13 @@ ControlUnit U_ControlUnit(
 
 Reg #(1)  U_IF_done (clk, rst, 1'b1, 1'b1, IF_done);
 Reg #(32) U_IF_PC   (clk, rst, ~IF_bubble, ID_branch ? IM_PC : PC  , IF_PC  );
-Reg #(32) U_IF_PCA4 (clk, rst, ~IF_bubble, PCA4, IF_PCA4);
+Reg #(32) U_IF_PCA4 (clk, rst, ~IF_bubble, ID_branch ? NPC_NPC+4 : PCA4, IF_PCA4);
 
 // hazard detect (generate bubbles)
-assign IF_bubble = ((rs1 == EX_rd || rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_rd != 5'b0) ||
+assign IF_bubble = (((rs1 == EX_rd || rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_rd != 5'b0) ||
                    ((rs1 == ID_rd || rs2 == ID_rd) && ID_RFWrite == 1'b1 && ID_rd != 5'b0) ||
                    (ID_WDSel == `WDSel_FromMEM && ID_RFWrite == 1'b1) ||
-                   ((rs1 == MEM_rd || rs2 == MEM_rd) && MEM_DMReadStall == 1'b1);
+                   ((rs1 == MEM_rd || rs2 == MEM_rd) && MEM_DMReadStall == 1'b1)) && (ID_branch != 1);
 
 assign PC_NPC  = ID_branch ? NPC_NPC + 4 : IF_bubble ? IF_PCA4 : NPC_NPC;
 assign IM_PC   = ID_branch ? NPC_NPC : IF_bubble ? IF_PC : PC;
@@ -138,7 +138,7 @@ PC U_PC (
 
 // ÊuÀý»- NPC
 NPC U_NPC (
-    .PC(NPC_PC), .NPCOp(ID_NPCOp), .Offset12(ID_Offset), .Offset20(ID_Offset20), .rs({RD1[31:2], 2'b00}), .PCA4(PCA4), .NPC(NPC_NPC)
+    .PC(NPC_PC), .NPCOp(ID_NPCOp), .Offset12(ID_Offset), .Offset20(ID_Offset20), .rs({ID_RD1[31:2], 2'b00}), .PCA4(PCA4), .NPC(NPC_NPC)
 );
 
 // ÊuÀý»- IM
@@ -333,6 +333,23 @@ Reg #(1)  U_MEMstall_RFWrite (clk, rst, 1'b1, MEM_DMReadStall ? MEM_RFWrite : 1'
 Reg #(1)  U_MEMstall_done    (clk, rst, 1'b1, MEM_DMReadStall ? MEM_done    : 1'b0, MEMStall_done   );
 
 Reg #(1)  U_MEMstall_stall   (clk, rst, 1'b1, MEM_DMReadStall, MEMStall_stall);
+
+
+
+wire [31:0] IF_dnpc, ID_dnpc, EX_dnpc, MEM_dnpc, MEMStall_dnpc, WB_dnpc, dnpc;
+
+// Reg #(32) U_IF_dnpc (clk, rst, ~IF_bubble, PCA4, IF_dnpc);
+Reg #(32) U_IFID_dnpc (clk, rst, 1'b1, IF_PCA4, ID_dnpc);
+Reg #(32) U_IDEX_dnpc (clk, rst, 1'b1, ID_branch ? NPC_NPC : ID_dnpc, EX_dnpc);
+Reg #(32) U_EXMEM_dnpc (clk, rst, 1'b1, EX_dnpc, MEM_dnpc);
+Reg #(32) U_MEMstall_dnpc (clk, rst, 1'b1, MEM_dnpc, MEMStall_dnpc);
+Reg #(32) U_MEMWB_dnpc (clk, rst, 1'b1, MEMStall_stall ? MEMStall_dnpc : MEM_dnpc, WB_dnpc);
+Reg #(32) U_WB_dnpc (clk, rst, 1'b1, WB_dnpc, dnpc);
+
+export "DPI-C" function DPI_getPC;
+function int DPI_getPC();
+    return dnpc;
+endfunction
 
 
 endmodule

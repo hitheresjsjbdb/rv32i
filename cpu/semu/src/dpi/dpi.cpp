@@ -10,7 +10,7 @@ word_t sim::getReg(size_t idx) {
 }
 
 word_t sim::getPC() {
-    const svScope scope = svGetScopeFromName("TOP.riscv.U_NPC");
+    const svScope scope = svGetScopeFromName("TOP.riscv");
     assert(scope);
     svSetScope(scope);
     return static_cast<word_t>(DPI_getPC());

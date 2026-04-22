@@ -28,7 +28,7 @@ static bool checkPC() {
 }
 
 bool diffTest() {
-    bool pcPass = 1;
+    bool pcPass = checkPC();
     bool regPass = checkReg();
     return pcPass && regPass;
 }

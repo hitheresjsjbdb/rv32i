@@ -19,7 +19,7 @@ wire [31:0] rs_aligned;
 assign Offset13 = $signed({Offset12[12:1], 1'b0});
 assign Offset21 = $signed({Offset20[20:1], 1'b0});
 assign Imm12Ext = {{20{Offset12[12]}}, Offset12[12:1]};
-assign rs_aligned = {rs[29:0], 2'b0};
+assign rs_aligned = {rs[31:2], 2'b0};
 
 wire pc, o12, RS, o20;
 
@@ -47,9 +47,6 @@ always @(*) begin
     PCA4 = PC + 4;
 end
 
-export "DPI-C" function DPI_getPC;
-function int DPI_getPC();
-    return NPC;
-endfunction
+
 
 endmodule

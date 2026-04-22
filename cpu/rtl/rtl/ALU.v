@@ -23,26 +23,26 @@ assign SRL = (ALUOp == `ALUOp_SRL);
 assign BR  = (ALUOp == `ALUOp_BR);
 
 always @(*) begin
-    // case (ALUOp)
-    //     `ALUOp_ADD: ALU_result = A + B;
-    //     `ALUOp_SUB: ALU_result = A - B;
-    //     `ALUOp_AND: ALU_result = A & B;
-    //     `ALUOp_OR : ALU_result = A | B;
-    //     `ALUOp_XOR: ALU_result = A ^ B;
-    //     `ALUOp_SRA: ALU_result = A >>> B[4:0];
-    //     `ALUOp_SLL: ALU_result = A << B[4:0];
-    //     `ALUOp_SRL: ALU_result = $unsigned(A) >> B[4:0];
-    //     `ALUOp_BR : ALU_result = A - B;
-    //     default   : ALU_result = 32'b0;
-    // endcase
-    ALU_result = ({32{ADD}} & (A + B)) |
-                 ({32{SUB}} & (A - B)) |
-                 ({32{AND}} & (A & B)) |
-                 ({32{OR} } & (A | B)) |
-                 ({32{XOR}} & (A ^ B)) |
-                 ({32{SRA}} & (A >>> B[4:0])) |
-                 ({32{SLL}} & (A << B[4:0])) |
-                 ({32{SRL}} & ($unsigned(A) >> B[4:0]));
+    case (ALUOp)
+        `ALUOp_ADD: ALU_result = A + B;
+        `ALUOp_SUB: ALU_result = A - B;
+        `ALUOp_AND: ALU_result = A & B;
+        `ALUOp_OR : ALU_result = A | B;
+        `ALUOp_XOR: ALU_result = A ^ B;
+        `ALUOp_SRA: ALU_result = A >>> B[4:0];
+        `ALUOp_SLL: ALU_result = A << B[4:0];
+        `ALUOp_SRL: ALU_result = $unsigned(A) >> B[4:0];
+        `ALUOp_BR : ALU_result = A - B;
+        default   : ALU_result = 32'b0;
+    endcase
+    // ALU_result = ({32{ADD}} & (A + B)) |
+    //              ({32{SUB}} & (A - B)) |
+    //              ({32{AND}} & (A & B)) |
+    //              ({32{OR} } & (A | B)) |
+    //              ({32{XOR}} & (A ^ B)) |
+    //              ({32{SRA}} & (A >>> B[4:0])) |
+    //              ({32{SLL}} & (A << B[4:0])) |
+    //              ({32{SRL}} & ($unsigned(A) >> B[4:0]));
 end
 
 endmodule
