@@ -24,6 +24,7 @@ module ControlUnit(
     output reg [1:0] WDSel,
     output reg [3:0] ALUOp,
 
+    input bubble,
     output reg branch,
     output reg [1:0] ID_NPCOp
 
@@ -202,7 +203,7 @@ wire [6:0] ID_opcode;
 wire [2:0] ID_Funct3;
 
 
-Reg #(7) U_Reg_opcode (clk, rst, 1'b1, opcode, ID_opcode);
+Reg #(7) U_Reg_opcode (clk, rst, 1'b1, bubble ? 7'b0 : opcode, ID_opcode);
 Reg #(3) U_Reg_Funct3 (clk, rst, 1'b1, Funct3, ID_Funct3);
 
 always @(*) begin

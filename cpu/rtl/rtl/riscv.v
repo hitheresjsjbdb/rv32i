@@ -52,7 +52,7 @@ wire        IF_done;
 wire        IF_bubble;
 wire [9:0]  IM_addr;
 wire [31:0] IF_PC, IF_PCA4;
-wire [31:0] PC_NPC, NPC_NPC, NPC_PC;
+wire [31:0] PC_NPC, NPC_NPC, NPC_PC, IM_PC;
 //default
 
 /* ID */
@@ -102,6 +102,7 @@ wire cu_zero;
 ControlUnit U_ControlUnit(
     /* input */
     .clk(clk), .rst(rst), .zero(cu_zero), .opcode(opcode), .Funct7(Funct7), .Funct3(Funct3),
+    .bubble(IF_bubble),
 
     /* output */
     .RFWrite(RFWrite), .DMCtrl(DMCtrl), .PCWrite(PCWrite), .IRWrite(IRWrite), .InsMemRW(InsMemRW),
@@ -116,7 +117,7 @@ ControlUnit U_ControlUnit(
 /* ################################ IF ################################ */
 
 Reg #(1)  U_IF_done (clk, rst, 1'b1, 1'b1, IF_done);
-Reg #(32) U_IF_PC   (clk, rst, ~IF_bubble, PC  , IF_PC  );
+Reg #(32) U_IF_PC   (clk, rst, ~IF_bubble, ID_branch ? IM_PC : PC  , IF_PC  );
 Reg #(32) U_IF_PCA4 (clk, rst, ~IF_bubble, PCA4, IF_PCA4);
 
 // hazard detect (generate bubbles)
@@ -126,7 +127,8 @@ assign IF_bubble = ((rs1 == EX_rd || rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_r
                    ((rs1 == MEM_rd || rs2 == MEM_rd) && MEM_DMReadStall == 1'b1);
 
 assign PC_NPC  = ID_branch ? NPC_NPC + 4 : IF_bubble ? IF_PCA4 : NPC_NPC;
-assign IM_addr = ID_branch ? NPC_NPC[11:2] : IF_bubble ? IF_PC[11:2] : PC[11:2];
+assign IM_PC   = ID_branch ? NPC_NPC : IF_bubble ? IF_PC : PC;
+assign IM_addr = IM_PC[11:2];
 assign NPC_PC  = ID_branch ? ID_PC : PC;
 
 // ÊuÀý»- PC
@@ -253,7 +255,7 @@ Reg #(1) U_done (clk, rst, 1'b1, WB_done, done);
 /* IF -> ID */
 
 Reg #(32) U_IFID_PCA4 (clk, rst, 1'b1, IF_PCA4, ID_PCA4);
-Reg #(32) I_IFID_PC   (clk, rst, 1'b1, IF_PC  , ID_PC  );
+Reg #(32) I_IFID_PC   (clk, rst, 1'b1, IF_PC , ID_PC  );
 
 Reg #(12) U_IFID_Imm12 (clk, rst, 1'b1, Imm12 , ID_Imm12 );
 Reg #(12) U_IFID_Offet (clk, rst, 1'b1, Offset, ID_Offset);
