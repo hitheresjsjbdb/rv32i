@@ -201,6 +201,7 @@ end
 
 wire [6:0] ID_opcode, EX_opcode;
 wire [2:0] ID_Funct3, EX_Funct3;
+reg [1:0] ID_NPCOp;
 
 
 Reg #(.WIDTH(7)) U_IFID_opcode (.clk(clk), .rst(rst), .en(1'b1), .in(bubble ? 7'b0 : opcode), .out(ID_opcode));
@@ -209,34 +210,38 @@ Reg #(.WIDTH(3)) U_IFID_Funct3 (.clk(clk), .rst(rst), .en(1'b1), .in(Funct3), .o
 Reg #(.WIDTH(7)) U_IDEX_opcode (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 7'b0 : ID_opcode), .out(EX_opcode));
 Reg #(.WIDTH(3)) U_IDEX_Funct3 (.clk(clk), .rst(rst), .en(1'b1), .in(ID_Funct3), .out(EX_Funct3));
 
+
 always @(*) begin
-    case (EX_opcode)
+    case (ID_opcode)
         `INSTR_BTYPE_OP: begin
-            case (EX_Funct3)
-                `INSTR_BEQ_FUNCT: EX_NPCOp = zero ? `NPC_Offset12 : `NPC_PC; // beq
-                `INSTR_BNE_FUNCT: EX_NPCOp = zero ? `NPC_PC : `NPC_Offset12; // bne
-                default: EX_NPCOp = `NPC_PC;
+            case (ID_Funct3)
+                `INSTR_BEQ_FUNCT: ID_NPCOp = zero ? `NPC_Offset12 : `NPC_PC; // beq
+                `INSTR_BNE_FUNCT: ID_NPCOp = zero ? `NPC_PC : `NPC_Offset12; // bne
+                default: ID_NPCOp = `NPC_PC;
             endcase
         end
 
         // jal
         `INSTR_JAL_OP: begin
-            EX_NPCOp   = `NPC_Offset20;
+            ID_NPCOp   = `NPC_Offset20;
         end
 
         // jalr
         `INSTR_JALR_OP: begin
-            EX_NPCOp   = `NPC_rs;
+            ID_NPCOp   = `NPC_rs;
         end
 
         default: begin
-            EX_NPCOp = `NPC_PC;
+            ID_NPCOp = `NPC_PC;
         end
     endcase
     
-    branch = (EX_NPCOp != `NPC_PC);
+    //branch = (ID_NPCOp != `NPC_PC);
 
 end
+
+Reg #(.WIDTH(1)) U_branch (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 1'b0 : ID_NPCOp != `NPC_PC), .out(branch));
+Reg #(.WIDTH(2)) U_NPCOp (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? `NPC_PC : ID_NPCOp), .out(EX_NPCOp));
 
 
 endmodule

@@ -204,8 +204,8 @@ assign MEMID_forward2 = ID_rs2 == MEM_rd && MEM_RFWrite == 1 && MEM_rd != 0;
 assign ID_RD1 = WBID_forward1 ? WB_WD : RD1;
 assign ID_RD2 = WBID_forward2 ? WB_WD : RD2;
 
-// assign cu_zero = ID_RD1 == ID_RD2;
-Reg #(.WIDTH(1)) U_IDEX_zero (.clk(clk), .rst(rst), .en(1'b1), .in(EX_branch ? 1'b0 : ID_RD1 == ID_RD2), .out(cu_zero));
+assign cu_zero = ID_RD1 == ID_RD2;
+// Reg #(.WIDTH(1)) U_IDEX_zero (.clk(clk), .rst(rst), .en(1'b1), .in(EX_branch ? 1'b0 : ID_RD1 == ID_RD2), .out(cu_zero));
 
 /* ################################ EX ################################ */
 
