@@ -44,6 +44,7 @@ wire [31:0] RD1, RD1_r, RD2, RD2_r;
 wire [31:0] A, B, ALU_result, ALU_result_r;
 
 wire IF_bubble, MEM_DMReadStall, MEMStall_stall, WB_RFWrite, EX_branch, cu_zero;
+wire MEM_DMCtrl;
 wire ID_ALUSrcA, ID_RFWrite, ID_DMCtrl, ID_done;
 wire EX_ALUSrcA, EX_RFWrite, EX_DMCtrl, EX_done;
 wire [9:0] IM_addr;
@@ -58,22 +59,40 @@ wire [19:0] ID_Offset20, EX_Offset20;
 wire [31:0] IF_PC, IF_PCA4, NPC_PC, IM_PC, PC_NPC;
 wire [31:0] ID_RD1, ID_RD2;
 wire [31:0] EX_Imm32, EX_PCA4, EX_PC;
-wire [31:0] MEM_PCA4, WB_WD, dnpc;
+wire [31:0] MEM_WD, MEM_PCA4, WB_WD, dnpc;
+
+assign opcode  = out_ins[6:0];
+assign Funct3  = out_ins[14:12];
+assign Funct7  = out_ins[31:25];
+assign rs1     = out_ins[19:15];
+assign rs2     = out_ins[24:20];
+assign rd      = out_ins[11:7];
+assign Imm12   = out_ins[31:20];
+assign Offset20 = {out_ins[31],out_ins[19:12],out_ins[20],out_ins[30:21]};
+assign Offset  = (opcode == `INSTR_BTYPE_OP) ? {out_ins[31],out_ins[7],out_ins[30:25],out_ins[11:8]} :
+                 (opcode == `INSTR_SW_OP)  ? {out_ins[31:25],out_ins[11:7]} : Imm12;
 
 // ÊuÀý»- ControlUnit
 ControlUnit U_ControlUnit(
     .clk(clk), .rst(rst), .zero(cu_zero), .opcode(EX_branch ? 7'b0 : opcode), .Funct7(Funct7), .Funct3(Funct3),
-    .rs1(rs1), .rs2(rs2), .ID_rd(ID_rd), .EX_rd(EX_rd), .MEM_rd(MEM_rd), .WB_rd(WB_rd),
-    .ID_rs1(ID_rs1), .ID_rs2(ID_rs2), .RD1_in(RD1), .RD2_in(RD2), .WB_WD_in(WB_WD),
-    .WB_RFWrite(WB_RFWrite), .MEM_DMReadStall(MEM_DMReadStall), .bubble(IF_bubble),
+    .rs1(rs1), .rs2(rs2), .EX_rd(EX_rd), .MEM_rd(MEM_rd), .WB_rd(WB_rd), .rd_in(rd),
+    .Imm12_in(Imm12), .Imm32_in(Imm32), .Offset_in(Offset), .Offset20_in(Offset20), .IF_PCA4_in(IF_PCA4), .IF_PC_in(IF_PC),
+    .RD1_in(RD1), .RD2_in(RD2), .WB_WD_in(WB_WD),
+    .EX_WD_in(RD2_r), .EX_PCA4_in(EX_PCA4), .WD_in(WD), .NPC_NPC_in(NPC),
+    .WB_RFWrite(WB_RFWrite), .bubble(IF_bubble),
     .ID_RD1_out(ID_RD1), .ID_RD2_out(ID_RD2), .ID_zero(cu_zero),
     .RFWrite(RFWrite), .DMCtrl(DMCtrl), .PCWrite(PCWrite), .IRWrite(IRWrite), .InsMemRW(InsMemRW),
     .ExtSel(ExtSel), .ALUOp(ALUOp), .NPCOp(NPCOp), .ALUSrcA(ALUSrcA),
     .WDSel(WDSel), .ALUSrcB(ALUSrcB), .RegSel(RegSel),
-    .ID_ALUOp(ID_ALUOp), .ID_RegSel(ID_RegSel), .ID_ALUSrcB(ID_ALUSrcB), .ID_WDSel(ID_WDSel),
+    .ID_ALUOp(ID_ALUOp), .ID_RegSel(ID_RegSel), .ID_ALUSrcB(ID_ALUSrcB), .ID_WDSel(ID_WDSel), .ID_Imm12_out(ID_Imm12),
+    .ID_Offset_out(ID_Offset), .ID_Offset20_out(ID_Offset20), .ID_rs1_out(ID_rs1), .ID_rs2_out(ID_rs2), .ID_rd_out(ID_rd),
     .ID_ALUSrcA(ID_ALUSrcA), .ID_RFWrite(ID_RFWrite), .ID_DMCtrl(ID_DMCtrl), .ID_done(ID_done),
-    .EX_ALUOp(EX_ALUOp), .EX_RegSel(EX_RegSel), .EX_ALUSrcB(EX_ALUSrcB), .EX_WDSel(EX_WDSel),
+    .EX_ALUOp(EX_ALUOp), .EX_RegSel(EX_RegSel), .EX_ALUSrcB(EX_ALUSrcB), .EX_WDSel(EX_WDSel), .EX_Imm32_out(EX_Imm32),
+    .EX_Offset_out(EX_Offset), .EX_Offset20_out(EX_Offset20), .EX_PCA4_out(EX_PCA4), .EX_PC_out(EX_PC), .EX_rd_out(EX_rd),
     .EX_ALUSrcA(EX_ALUSrcA), .EX_RFWrite(EX_RFWrite), .EX_DMCtrl(EX_DMCtrl), .EX_done(EX_done),
+    .MEM_WD_out(MEM_WD), .MEM_PCA4_out(MEM_PCA4), .MEM_rd_out(MEM_rd), .MEM_WDSel_out(MEM_WDSel), .MEM_DMCtrl_out(MEM_DMCtrl),
+    .MEMStall_WDSel_out(MEMStall_WDSel), .MEMStall_stall_out(MEMStall_stall), .WB_rd_out(WB_rd), .WB_RFWrite_out(WB_RFWrite),
+    .WB_WD_out(WB_WD), .done_out(done), .DMReadStall(MEM_DMReadStall), .dnpc_out(dnpc),
     .branch(EX_branch), .EX_NPCOp(EX_NPCOp)
 );
 
@@ -119,23 +138,17 @@ MUX_3to1_LMD U_MUX_3to1_LMD (
 
 // ÊuÀý»- Flopr
 Flopr U_A (
-    .clk(clk), .rst(rst), .in_data(ID_RD1), .out_data(RD1_r)
+    .clk(clk), .rst(rst), .en(1'b1), .in_data(ID_RD1), .out_data(RD1_r)
 );
 
 // ÊuÀý»- Flopr
 Flopr U_B (
-    .clk(clk), .rst(rst), .in_data(ID_RD2), .out_data(RD2_r)
+    .clk(clk), .rst(rst), .en(1'b1), .in_data(ID_RD2), .out_data(RD2_r)
 );
 
 // ÊuÀý»- EXT
 EXT U_EXT (
-    .imm_in(ID_Imm12), .ExtSel(`ExtSel_SIGNED), .imm_out(Imm32),
-    .ins(out_ins), .opcode_out(opcode), .Funct3_out(Funct3), .Funct7_out(Funct7), .rs1_out(rs1), .rs2_out(rs2), .rd_out(rd),
-    .Imm12_out(Imm12), .Offset20_out(Offset20), .Offset_out(Offset),
-    .clk(clk), .rst(rst), .ID_Imm12_pipe(ID_Imm12), .ID_Offset_pipe(ID_Offset), .ID_Offset20_pipe(ID_Offset20),
-    .EX_Imm32_pipe(EX_Imm32), .EX_Offset_pipe(EX_Offset), .EX_Offset20_pipe(EX_Offset20),
-    .IF_PCA4_in(IF_PCA4), .IF_PC_in(IF_PC), .ID_rs1_pipe(ID_rs1), .ID_rs2_pipe(ID_rs2), .ID_rd_pipe(ID_rd),
-    .EX_PCA4_pipe(EX_PCA4), .EX_PC_pipe(EX_PC), .EX_rd_pipe(EX_rd)
+    .imm_in(Imm12), .ExtSel(ExtSel), .imm_out(Imm32)
 );
 
 // ÊuÀý»- MUX_2to1_A
@@ -155,18 +168,12 @@ ALU U_ALU (
 
 // ÊuÀý»- Flopr
 Flopr U_ALUOut (
-    .clk(clk), .rst(rst), .in_data(ALU_result), .out_data(ALU_result_r)
+    .clk(clk), .rst(rst), .en(1'b1), .in_data(ALU_result), .out_data(ALU_result_r)
 );
 
 // ÊuÀý»- DM
 DM U_DM (
-    .Addr(ALU_result_r[11:2]), .clk(clk), .rst(rst), .RD(RD),
-    .EX_WD_in(RD2_r), .EX_PCA4_in(EX_PCA4), .EX_rd_in(EX_rd), .EX_WDSel_in(EX_WDSel),
-    .EX_RFWrite_in(EX_RFWrite), .EX_DMCtrl_in(EX_DMCtrl), .EX_done_in(EX_done),
-    .MEM_PCA4_out(MEM_PCA4), .MEM_rd_out(MEM_rd), .MEM_WDSel_out(MEM_WDSel),
-    .MEMStall_WDSel_out(MEMStall_WDSel), .MEMStall_stall_out(MEMStall_stall),
-    .WB_rd_out(WB_rd), .WB_RFWrite_out(WB_RFWrite), .WB_WD_in(WD), .WB_WD_out(WB_WD), .done_out(done),
-    .DMReadStall(MEM_DMReadStall), .EX_branch_in(EX_branch), .NPC_NPC_in(NPC), .dnpc_out(dnpc)
+    .Addr(ALU_result_r[11:2]), .WD(MEM_WD), .DMCtrl(MEM_DMCtrl), .clk(clk), .rst(rst), .RD(RD)
 );
 
 //// ÊuÀý»- Flopr

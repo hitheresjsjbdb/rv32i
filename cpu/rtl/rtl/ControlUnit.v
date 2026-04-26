@@ -27,17 +27,24 @@ module ControlUnit(
     output bubble,
     input [4:0] rs1,
     input [4:0] rs2,
-    input [4:0] ID_rd,
     input [4:0] EX_rd,
     input [4:0] MEM_rd,
     input [4:0] WB_rd,
-    input [4:0] ID_rs1,
-    input [4:0] ID_rs2,
+    input [4:0] rd_in,
+    input [11:0] Imm12_in,
+    input [31:0] Imm32_in,
+    input [11:0] Offset_in,
+    input [19:0] Offset20_in,
+    input [31:0] IF_PCA4_in,
+    input [31:0] IF_PC_in,
     input [31:0] RD1_in,
     input [31:0] RD2_in,
     input [31:0] WB_WD_in,
+    input [31:0] EX_WD_in,
+    input [31:0] EX_PCA4_in,
+    input [31:0] WD_in,
+    input [31:0] NPC_NPC_in,
     input WB_RFWrite,
-    input MEM_DMReadStall,
     output [31:0] ID_RD1_out,
     output [31:0] ID_RD2_out,
     output ID_zero,
@@ -49,6 +56,12 @@ module ControlUnit(
     output ID_RFWrite,
     output ID_DMCtrl,
     output ID_done,
+    output [11:0] ID_Imm12_out,
+    output [11:0] ID_Offset_out,
+    output [19:0] ID_Offset20_out,
+    output [4:0] ID_rs1_out,
+    output [4:0] ID_rs2_out,
+    output [4:0] ID_rd_out,
     output [3:0] EX_ALUOp,
     output [1:0] EX_RegSel,
     output [1:0] EX_ALUSrcB,
@@ -57,6 +70,25 @@ module ControlUnit(
     output EX_RFWrite,
     output EX_DMCtrl,
     output EX_done,
+    output [31:0] EX_Imm32_out,
+    output [11:0] EX_Offset_out,
+    output [19:0] EX_Offset20_out,
+    output [31:0] EX_PCA4_out,
+    output [31:0] EX_PC_out,
+    output [4:0] EX_rd_out,
+    output [31:0] MEM_WD_out,
+    output [31:0] MEM_PCA4_out,
+    output [4:0] MEM_rd_out,
+    output [1:0] MEM_WDSel_out,
+    output MEM_DMCtrl_out,
+    output [1:0] MEMStall_WDSel_out,
+    output MEMStall_stall_out,
+    output [4:0] WB_rd_out,
+    output WB_RFWrite_out,
+    output [31:0] WB_WD_out,
+    output done_out,
+    output DMReadStall,
+    output [31:0] dnpc_out,
     output reg branch,
     output reg [1:0] EX_NPCOp
 
@@ -65,16 +97,23 @@ module ControlUnit(
 reg [2:0] State, NxtState;
 reg AR, MEM, WB, EX, RFWrite_tmp;
 reg IF_done_reg;
+wire [31:0] ID_Imm32_pipe;
+wire [31:0] ID_PCA4_pipe, ID_PC_pipe;
 wire WBID_forward1, WBID_forward2;
+wire MEM_RFWrite_out, MEM_done_out;
+wire [4:0] MEMStall_rd_out;
+wire MEMStall_RFWrite_out, MEMStall_done_out;
+wire WB_done_out;
+wire [31:0] MEM_dnpc_out, MEMStall_dnpc_out, WB_dnpc_out;
 always @(*) RFWrite = RFWrite_tmp;
 
 assign bubble = (((rs1 == EX_rd || rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_rd != 5'b0) ||
-                 ((rs1 == ID_rd || rs2 == ID_rd) && ID_RFWrite == 1'b1 && ID_rd != 5'b0) ||
+                 ((rs1 == ID_rd_out || rs2 == ID_rd_out) && ID_RFWrite == 1'b1 && ID_rd_out != 5'b0) ||
                  (ID_WDSel == `WDSel_FromMEM && ID_RFWrite == 1'b1) ||
-                 ((rs1 == MEM_rd || rs2 == MEM_rd) && MEM_DMReadStall == 1'b1)) && (branch != 1'b1);
+                 ((rs1 == MEM_rd || rs2 == MEM_rd) && DMReadStall == 1'b1)) && (branch != 1'b1);
 
-assign WBID_forward1 = (ID_rs1 == WB_rd) && (WB_RFWrite == 1'b1) && (WB_rd != 5'b0);
-assign WBID_forward2 = (ID_rs2 == WB_rd) && (WB_RFWrite == 1'b1) && (WB_rd != 5'b0);
+assign WBID_forward1 = (ID_rs1_out == WB_rd) && (WB_RFWrite == 1'b1) && (WB_rd != 5'b0);
+assign WBID_forward2 = (ID_rs2_out == WB_rd) && (WB_RFWrite == 1'b1) && (WB_rd != 5'b0);
 assign ID_RD1_out = WBID_forward1 ? WB_WD_in : RD1_in;
 assign ID_RD2_out = WBID_forward2 ? WB_WD_in : RD2_in;
 assign ID_zero = (ID_RD1_out == ID_RD2_out);
@@ -162,7 +201,7 @@ always @(*) begin
                 end
                 `INSTR_ORI_FUNCT: begin
                     // ori
-                    ExtSel = `ExtSel_ZERO;
+                    ExtSel = `ExtSel_SIGNED;
                     ALUOp  = `ALUOp_OR;
                 end
                 default: begin
@@ -256,29 +295,44 @@ wire [6:0] ID_opcode, EX_opcode;
 wire [2:0] ID_Funct3, EX_Funct3;
 reg [1:0] ID_NPCOp;
 
+Flopr #(.WIDTH(12), .USE_EN(1)) U_IFID_Imm12 (.clk(clk), .rst(rst), .en(1'b1), .in_data(Imm12_in), .out_data(ID_Imm12_out));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_IFID_Imm32 (.clk(clk), .rst(rst), .en(1'b1), .in_data(Imm32_in), .out_data(ID_Imm32_pipe));
+Flopr #(.WIDTH(12), .USE_EN(1)) U_IFID_Offset (.clk(clk), .rst(rst), .en(1'b1), .in_data(Offset_in), .out_data(ID_Offset_out));
+Flopr #(.WIDTH(20), .USE_EN(1)) U_IFID_Offset20 (.clk(clk), .rst(rst), .en(1'b1), .in_data(Offset20_in), .out_data(ID_Offset20_out));
+Flopr #(.WIDTH(5), .USE_EN(1)) U_IFID_rs1 (.clk(clk), .rst(rst), .en(1'b1), .in_data(rs1), .out_data(ID_rs1_out));
+Flopr #(.WIDTH(5), .USE_EN(1)) U_IFID_rs2 (.clk(clk), .rst(rst), .en(1'b1), .in_data(rs2), .out_data(ID_rs2_out));
+Flopr #(.WIDTH(5), .USE_EN(1)) U_IFID_rd (.clk(clk), .rst(rst), .en(1'b1), .in_data(rd_in), .out_data(ID_rd_out));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_IFID_PCA4 (.clk(clk), .rst(rst), .en(1'b1), .in_data(IF_PCA4_in), .out_data(ID_PCA4_pipe));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_IFID_PC (.clk(clk), .rst(rst), .en(1'b1), .in_data(IF_PC_in), .out_data(ID_PC_pipe));
 
-Reg #(.WIDTH(7)) U_IFID_opcode (.clk(clk), .rst(rst), .en(1'b1), .in(bubble ? 7'b0 : opcode), .out(ID_opcode));
-Reg #(.WIDTH(3)) U_IFID_Funct3 (.clk(clk), .rst(rst), .en(1'b1), .in(Funct3), .out(ID_Funct3));
+Flopr #(.WIDTH(7), .USE_EN(1)) U_IFID_opcode (.clk(clk), .rst(rst), .en(1'b1), .in_data(bubble ? 7'b0 : opcode), .out_data(ID_opcode));
+Flopr #(.WIDTH(3), .USE_EN(1)) U_IFID_Funct3 (.clk(clk), .rst(rst), .en(1'b1), .in_data(Funct3), .out_data(ID_Funct3));
 
-Reg #(.WIDTH(4)) U_IFID_ALUOp (.clk(clk), .rst(rst), .en(1'b1), .in(ALUOp), .out(ID_ALUOp));
-Reg #(.WIDTH(2)) U_IFID_RegSel (.clk(clk), .rst(rst), .en(1'b1), .in(RegSel), .out(ID_RegSel));
-Reg #(.WIDTH(2)) U_IFID_ALUSrcB (.clk(clk), .rst(rst), .en(1'b1), .in(ALUSrcB), .out(ID_ALUSrcB));
-Reg #(.WIDTH(2)) U_IFID_WDSel (.clk(clk), .rst(rst), .en(1'b1), .in(WDSel), .out(ID_WDSel));
-Reg #(.WIDTH(1)) U_IFID_ALUSrcA (.clk(clk), .rst(rst), .en(1'b1), .in(ALUSrcA), .out(ID_ALUSrcA));
-Reg #(.WIDTH(1)) U_IFID_RFWrite (.clk(clk), .rst(rst), .en(1'b1), .in((bubble || branch) ? 1'b0 : RFWrite), .out(ID_RFWrite));
-Reg #(.WIDTH(1)) U_IFID_DMCtrl (.clk(clk), .rst(rst), .en(1'b1), .in((bubble || branch) ? 1'b0 : DMCtrl), .out(ID_DMCtrl));
-Reg #(.WIDTH(1)) U_IFID_done (.clk(clk), .rst(rst), .en(1'b1), .in((bubble || branch) ? 1'b0 : IF_done_reg), .out(ID_done));
+Flopr #(.WIDTH(4), .USE_EN(1)) U_IFID_ALUOp (.clk(clk), .rst(rst), .en(1'b1), .in_data(ALUOp), .out_data(ID_ALUOp));
+Flopr #(.WIDTH(2), .USE_EN(1)) U_IFID_RegSel (.clk(clk), .rst(rst), .en(1'b1), .in_data(RegSel), .out_data(ID_RegSel));
+Flopr #(.WIDTH(2), .USE_EN(1)) U_IFID_ALUSrcB (.clk(clk), .rst(rst), .en(1'b1), .in_data(ALUSrcB), .out_data(ID_ALUSrcB));
+Flopr #(.WIDTH(2), .USE_EN(1)) U_IFID_WDSel (.clk(clk), .rst(rst), .en(1'b1), .in_data(WDSel), .out_data(ID_WDSel));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_IFID_ALUSrcA (.clk(clk), .rst(rst), .en(1'b1), .in_data(ALUSrcA), .out_data(ID_ALUSrcA));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_IFID_RFWrite (.clk(clk), .rst(rst), .en(1'b1), .in_data((bubble || branch) ? 1'b0 : RFWrite), .out_data(ID_RFWrite));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_IFID_DMCtrl (.clk(clk), .rst(rst), .en(1'b1), .in_data((bubble || branch) ? 1'b0 : DMCtrl), .out_data(ID_DMCtrl));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_IFID_done (.clk(clk), .rst(rst), .en(1'b1), .in_data((bubble || branch) ? 1'b0 : IF_done_reg), .out_data(ID_done));
 
-Reg #(.WIDTH(7)) U_IDEX_opcode (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 7'b0 : ID_opcode), .out(EX_opcode));
-Reg #(.WIDTH(3)) U_IDEX_Funct3 (.clk(clk), .rst(rst), .en(1'b1), .in(ID_Funct3), .out(EX_Funct3));
-Reg #(.WIDTH(4)) U_IDEX_ALUOp (.clk(clk), .rst(rst), .en(1'b1), .in(ID_ALUOp), .out(EX_ALUOp));
-Reg #(.WIDTH(2)) U_IDEX_RegSel (.clk(clk), .rst(rst), .en(1'b1), .in(ID_RegSel), .out(EX_RegSel));
-Reg #(.WIDTH(2)) U_IDEX_ALUSrcB (.clk(clk), .rst(rst), .en(1'b1), .in(ID_ALUSrcB), .out(EX_ALUSrcB));
-Reg #(.WIDTH(2)) U_IDEX_WDSel (.clk(clk), .rst(rst), .en(1'b1), .in(ID_WDSel), .out(EX_WDSel));
-Reg #(.WIDTH(1)) U_IDEX_ALUSrcA (.clk(clk), .rst(rst), .en(1'b1), .in(ID_ALUSrcA), .out(EX_ALUSrcA));
-Reg #(.WIDTH(1)) U_IDEX_RFWrite (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 1'b0 : ID_RFWrite), .out(EX_RFWrite));
-Reg #(.WIDTH(1)) U_IDEX_DMCtrl (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 1'b0 : ID_DMCtrl), .out(EX_DMCtrl));
-Reg #(.WIDTH(1)) U_IDEX_done (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 1'b0 : ID_done), .out(EX_done));
+Flopr #(.WIDTH(7), .USE_EN(1)) U_IDEX_opcode (.clk(clk), .rst(rst), .en(1'b1), .in_data(branch ? 7'b0 : ID_opcode), .out_data(EX_opcode));
+Flopr #(.WIDTH(3), .USE_EN(1)) U_IDEX_Funct3 (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_Funct3), .out_data(EX_Funct3));
+Flopr #(.WIDTH(4), .USE_EN(1)) U_IDEX_ALUOp (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_ALUOp), .out_data(EX_ALUOp));
+Flopr #(.WIDTH(2), .USE_EN(1)) U_IDEX_RegSel (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_RegSel), .out_data(EX_RegSel));
+Flopr #(.WIDTH(2), .USE_EN(1)) U_IDEX_ALUSrcB (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_ALUSrcB), .out_data(EX_ALUSrcB));
+Flopr #(.WIDTH(2), .USE_EN(1)) U_IDEX_WDSel (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_WDSel), .out_data(EX_WDSel));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_IDEX_ALUSrcA (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_ALUSrcA), .out_data(EX_ALUSrcA));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_IDEX_RFWrite (.clk(clk), .rst(rst), .en(1'b1), .in_data(branch ? 1'b0 : ID_RFWrite), .out_data(EX_RFWrite));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_IDEX_DMCtrl (.clk(clk), .rst(rst), .en(1'b1), .in_data(branch ? 1'b0 : ID_DMCtrl), .out_data(EX_DMCtrl));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_IDEX_done (.clk(clk), .rst(rst), .en(1'b1), .in_data(branch ? 1'b0 : ID_done), .out_data(EX_done));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_IDEX_Imm32 (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_Imm32_pipe), .out_data(EX_Imm32_out));
+Flopr #(.WIDTH(12), .USE_EN(1)) U_IDEX_Offset (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_Offset_out), .out_data(EX_Offset_out));
+Flopr #(.WIDTH(20), .USE_EN(1)) U_IDEX_Offset20 (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_Offset20_out), .out_data(EX_Offset20_out));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_IDEX_PCA4 (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_PCA4_pipe), .out_data(EX_PCA4_out));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_IDEX_PC (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_PC_pipe), .out_data(EX_PC_out));
+Flopr #(.WIDTH(5), .USE_EN(1)) U_IDEX_rd (.clk(clk), .rst(rst), .en(1'b1), .in_data(ID_rd_out), .out_data(EX_rd_out));
 
 
 always @(*) begin
@@ -310,8 +364,34 @@ always @(*) begin
 
 end
 
-Reg #(.WIDTH(1)) U_branch (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 1'b0 : ID_NPCOp != `NPC_PC), .out(branch));
-Reg #(.WIDTH(2)) U_NPCOp (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? `NPC_PC : ID_NPCOp), .out(EX_NPCOp));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_branch (.clk(clk), .rst(rst), .en(1'b1), .in_data(branch ? 1'b0 : ID_NPCOp != `NPC_PC), .out_data(branch));
+Flopr #(.WIDTH(2), .USE_EN(1)) U_NPCOp (.clk(clk), .rst(rst), .en(1'b1), .in_data(branch ? `NPC_PC : ID_NPCOp), .out_data(EX_NPCOp));
+
+Flopr #(.WIDTH(32), .USE_EN(1)) U_EXMEM_WD (.clk(clk), .rst(rst), .en(1'b1), .in_data(EX_WD_in), .out_data(MEM_WD_out));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_EXMEM_PCA4 (.clk(clk), .rst(rst), .en(1'b1), .in_data(EX_PCA4_in), .out_data(MEM_PCA4_out));
+Flopr #(.WIDTH(5), .USE_EN(1)) U_EXMEM_rd (.clk(clk), .rst(rst), .en(1'b1), .in_data(EX_rd), .out_data(MEM_rd_out));
+Flopr #(.WIDTH(2), .USE_EN(1)) U_EXMEM_WDSel (.clk(clk), .rst(rst), .en(1'b1), .in_data(EX_WDSel), .out_data(MEM_WDSel_out));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_EXMEM_RFWrite (.clk(clk), .rst(rst), .en(1'b1), .in_data(EX_RFWrite), .out_data(MEM_RFWrite_out));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_EXMEM_DMCtrl (.clk(clk), .rst(rst), .en(1'b1), .in_data(EX_DMCtrl), .out_data(MEM_DMCtrl_out));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_EXMEM_done (.clk(clk), .rst(rst), .en(1'b1), .in_data(EX_done), .out_data(MEM_done_out));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_EXMEM_dnpc (.clk(clk), .rst(rst), .en(1'b1), .in_data(branch ? NPC_NPC_in : EX_PCA4_in), .out_data(MEM_dnpc_out));
+
+assign DMReadStall = (MEM_RFWrite_out == 1'b1) && (MEM_WDSel_out == `WDSel_FromMEM);
+
+Flopr #(.WIDTH(5), .USE_EN(1)) U_MEMSTALL_rd (.clk(clk), .rst(rst), .en(1'b1), .in_data(DMReadStall ? MEM_rd_out : 5'b0), .out_data(MEMStall_rd_out));
+Flopr #(.WIDTH(2), .USE_EN(1)) U_MEMSTALL_WDSel (.clk(clk), .rst(rst), .en(1'b1), .in_data(DMReadStall ? MEM_WDSel_out : 2'b0), .out_data(MEMStall_WDSel_out));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_MEMSTALL_RFWrite (.clk(clk), .rst(rst), .en(1'b1), .in_data(DMReadStall ? MEM_RFWrite_out : 1'b0), .out_data(MEMStall_RFWrite_out));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_MEMSTALL_done (.clk(clk), .rst(rst), .en(1'b1), .in_data(DMReadStall ? MEM_done_out : 1'b0), .out_data(MEMStall_done_out));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_MEMSTALL_stall (.clk(clk), .rst(rst), .en(1'b1), .in_data(DMReadStall), .out_data(MEMStall_stall_out));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_MEMSTALL_dnpc (.clk(clk), .rst(rst), .en(1'b1), .in_data(MEM_dnpc_out), .out_data(MEMStall_dnpc_out));
+
+Flopr #(.WIDTH(5), .USE_EN(1)) U_WB_rd (.clk(clk), .rst(rst), .en(1'b1), .in_data(MEMStall_stall_out ? MEMStall_rd_out : MEM_rd_out), .out_data(WB_rd_out));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_WB_RFWrite (.clk(clk), .rst(rst), .en(1'b1), .in_data(DMReadStall ? 1'b0 : (MEMStall_stall_out ? MEMStall_RFWrite_out : MEM_RFWrite_out)), .out_data(WB_RFWrite_out));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_WB_done (.clk(clk), .rst(rst), .en(1'b1), .in_data(DMReadStall ? 1'b0 : (MEMStall_stall_out ? MEMStall_done_out : MEM_done_out)), .out_data(WB_done_out));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_WB_WD (.clk(clk), .rst(rst), .en(1'b1), .in_data(WD_in), .out_data(WB_WD_out));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_WB_dnpc (.clk(clk), .rst(rst), .en(1'b1), .in_data(MEMStall_stall_out ? MEMStall_dnpc_out : MEM_dnpc_out), .out_data(WB_dnpc_out));
+Flopr #(.WIDTH(1), .USE_EN(1)) U_done (.clk(clk), .rst(rst), .en(1'b1), .in_data(WB_done_out), .out_data(done_out));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_dnpc (.clk(clk), .rst(rst), .en(1'b1), .in_data(WB_dnpc_out), .out_data(dnpc_out));
 
 
 endmodule
