@@ -23,7 +23,6 @@ module ControlUnit(
     output reg [1:0] NPCOp,
     output reg [1:0] WDSel,
     output reg [3:0] ALUOp,
-    input IF_done,
 
     output bubble,
     input [4:0] rs1,
@@ -65,6 +64,7 @@ module ControlUnit(
 
 reg [2:0] State, NxtState;
 reg AR, MEM, WB, EX, RFWrite_tmp;
+reg IF_done_reg;
 wire WBID_forward1, WBID_forward2;
 always @(*) RFWrite = RFWrite_tmp;
 
@@ -244,6 +244,14 @@ always @(*) begin
     endcase
 end
 
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        IF_done_reg <= 1'b0;
+    end else begin
+        IF_done_reg <= 1'b1;
+    end
+end
+
 wire [6:0] ID_opcode, EX_opcode;
 wire [2:0] ID_Funct3, EX_Funct3;
 reg [1:0] ID_NPCOp;
@@ -259,7 +267,7 @@ Reg #(.WIDTH(2)) U_IFID_WDSel (.clk(clk), .rst(rst), .en(1'b1), .in(WDSel), .out
 Reg #(.WIDTH(1)) U_IFID_ALUSrcA (.clk(clk), .rst(rst), .en(1'b1), .in(ALUSrcA), .out(ID_ALUSrcA));
 Reg #(.WIDTH(1)) U_IFID_RFWrite (.clk(clk), .rst(rst), .en(1'b1), .in((bubble || branch) ? 1'b0 : RFWrite), .out(ID_RFWrite));
 Reg #(.WIDTH(1)) U_IFID_DMCtrl (.clk(clk), .rst(rst), .en(1'b1), .in((bubble || branch) ? 1'b0 : DMCtrl), .out(ID_DMCtrl));
-Reg #(.WIDTH(1)) U_IFID_done (.clk(clk), .rst(rst), .en(1'b1), .in((bubble || branch) ? 1'b0 : IF_done), .out(ID_done));
+Reg #(.WIDTH(1)) U_IFID_done (.clk(clk), .rst(rst), .en(1'b1), .in((bubble || branch) ? 1'b0 : IF_done_reg), .out(ID_done));
 
 Reg #(.WIDTH(7)) U_IDEX_opcode (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 7'b0 : ID_opcode), .out(EX_opcode));
 Reg #(.WIDTH(3)) U_IDEX_Funct3 (.clk(clk), .rst(rst), .en(1'b1), .in(ID_Funct3), .out(EX_Funct3));
