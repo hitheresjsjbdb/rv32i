@@ -23,8 +23,41 @@ module ControlUnit(
     output reg [1:0] NPCOp,
     output reg [1:0] WDSel,
     output reg [3:0] ALUOp,
+    input IF_done,
 
-    input bubble,
+    output bubble,
+    input [4:0] rs1,
+    input [4:0] rs2,
+    input [4:0] ID_rd,
+    input [4:0] EX_rd,
+    input [4:0] MEM_rd,
+    input [4:0] WB_rd,
+    input [4:0] ID_rs1,
+    input [4:0] ID_rs2,
+    input [31:0] RD1_in,
+    input [31:0] RD2_in,
+    input [31:0] WB_WD_in,
+    input WB_RFWrite,
+    input MEM_DMReadStall,
+    output [31:0] ID_RD1_out,
+    output [31:0] ID_RD2_out,
+    output ID_zero,
+    output [3:0] ID_ALUOp,
+    output [1:0] ID_RegSel,
+    output [1:0] ID_ALUSrcB,
+    output [1:0] ID_WDSel,
+    output ID_ALUSrcA,
+    output ID_RFWrite,
+    output ID_DMCtrl,
+    output ID_done,
+    output [3:0] EX_ALUOp,
+    output [1:0] EX_RegSel,
+    output [1:0] EX_ALUSrcB,
+    output [1:0] EX_WDSel,
+    output EX_ALUSrcA,
+    output EX_RFWrite,
+    output EX_DMCtrl,
+    output EX_done,
     output reg branch,
     output reg [1:0] EX_NPCOp
 
@@ -32,7 +65,19 @@ module ControlUnit(
 
 reg [2:0] State, NxtState;
 reg AR, MEM, WB, EX, RFWrite_tmp;
+wire WBID_forward1, WBID_forward2;
 always @(*) RFWrite = RFWrite_tmp;
+
+assign bubble = (((rs1 == EX_rd || rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_rd != 5'b0) ||
+                 ((rs1 == ID_rd || rs2 == ID_rd) && ID_RFWrite == 1'b1 && ID_rd != 5'b0) ||
+                 (ID_WDSel == `WDSel_FromMEM && ID_RFWrite == 1'b1) ||
+                 ((rs1 == MEM_rd || rs2 == MEM_rd) && MEM_DMReadStall == 1'b1)) && (branch != 1'b1);
+
+assign WBID_forward1 = (ID_rs1 == WB_rd) && (WB_RFWrite == 1'b1) && (WB_rd != 5'b0);
+assign WBID_forward2 = (ID_rs2 == WB_rd) && (WB_RFWrite == 1'b1) && (WB_rd != 5'b0);
+assign ID_RD1_out = WBID_forward1 ? WB_WD_in : RD1_in;
+assign ID_RD2_out = WBID_forward2 ? WB_WD_in : RD2_in;
+assign ID_zero = (ID_RD1_out == ID_RD2_out);
 
 // assign done = State == `FSMState_IF;
 
@@ -207,8 +252,25 @@ reg [1:0] ID_NPCOp;
 Reg #(.WIDTH(7)) U_IFID_opcode (.clk(clk), .rst(rst), .en(1'b1), .in(bubble ? 7'b0 : opcode), .out(ID_opcode));
 Reg #(.WIDTH(3)) U_IFID_Funct3 (.clk(clk), .rst(rst), .en(1'b1), .in(Funct3), .out(ID_Funct3));
 
+Reg #(.WIDTH(4)) U_IFID_ALUOp (.clk(clk), .rst(rst), .en(1'b1), .in(ALUOp), .out(ID_ALUOp));
+Reg #(.WIDTH(2)) U_IFID_RegSel (.clk(clk), .rst(rst), .en(1'b1), .in(RegSel), .out(ID_RegSel));
+Reg #(.WIDTH(2)) U_IFID_ALUSrcB (.clk(clk), .rst(rst), .en(1'b1), .in(ALUSrcB), .out(ID_ALUSrcB));
+Reg #(.WIDTH(2)) U_IFID_WDSel (.clk(clk), .rst(rst), .en(1'b1), .in(WDSel), .out(ID_WDSel));
+Reg #(.WIDTH(1)) U_IFID_ALUSrcA (.clk(clk), .rst(rst), .en(1'b1), .in(ALUSrcA), .out(ID_ALUSrcA));
+Reg #(.WIDTH(1)) U_IFID_RFWrite (.clk(clk), .rst(rst), .en(1'b1), .in((bubble || branch) ? 1'b0 : RFWrite), .out(ID_RFWrite));
+Reg #(.WIDTH(1)) U_IFID_DMCtrl (.clk(clk), .rst(rst), .en(1'b1), .in((bubble || branch) ? 1'b0 : DMCtrl), .out(ID_DMCtrl));
+Reg #(.WIDTH(1)) U_IFID_done (.clk(clk), .rst(rst), .en(1'b1), .in((bubble || branch) ? 1'b0 : IF_done), .out(ID_done));
+
 Reg #(.WIDTH(7)) U_IDEX_opcode (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 7'b0 : ID_opcode), .out(EX_opcode));
 Reg #(.WIDTH(3)) U_IDEX_Funct3 (.clk(clk), .rst(rst), .en(1'b1), .in(ID_Funct3), .out(EX_Funct3));
+Reg #(.WIDTH(4)) U_IDEX_ALUOp (.clk(clk), .rst(rst), .en(1'b1), .in(ID_ALUOp), .out(EX_ALUOp));
+Reg #(.WIDTH(2)) U_IDEX_RegSel (.clk(clk), .rst(rst), .en(1'b1), .in(ID_RegSel), .out(EX_RegSel));
+Reg #(.WIDTH(2)) U_IDEX_ALUSrcB (.clk(clk), .rst(rst), .en(1'b1), .in(ID_ALUSrcB), .out(EX_ALUSrcB));
+Reg #(.WIDTH(2)) U_IDEX_WDSel (.clk(clk), .rst(rst), .en(1'b1), .in(ID_WDSel), .out(EX_WDSel));
+Reg #(.WIDTH(1)) U_IDEX_ALUSrcA (.clk(clk), .rst(rst), .en(1'b1), .in(ID_ALUSrcA), .out(EX_ALUSrcA));
+Reg #(.WIDTH(1)) U_IDEX_RFWrite (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 1'b0 : ID_RFWrite), .out(EX_RFWrite));
+Reg #(.WIDTH(1)) U_IDEX_DMCtrl (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 1'b0 : ID_DMCtrl), .out(EX_DMCtrl));
+Reg #(.WIDTH(1)) U_IDEX_done (.clk(clk), .rst(rst), .en(1'b1), .in(branch ? 1'b0 : ID_done), .out(EX_done));
 
 
 always @(*) begin

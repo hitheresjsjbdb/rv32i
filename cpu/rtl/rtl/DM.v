@@ -1,19 +1,106 @@
 `include "ctrl_signal_def.v"
 
-module DM(Addr, WD, clk, DMCtrl, RD);
+module DM(
+    Addr, WD, clk, rst, DMCtrl, RD,
+    EX_WD_in, EX_PCA4_in, EX_rd_in, EX_WDSel_in, EX_RFWrite_in, EX_DMCtrl_in, EX_done_in,
+    MEM_WD_out, MEM_PCA4_out, MEM_rd_out, MEM_WDSel_out, MEM_RFWrite_out, MEM_DMCtrl_out, MEM_done_out,
+    MEMStall_rd_out, MEMStall_WDSel_out, MEMStall_RFWrite_out, MEMStall_done_out, MEMStall_stall_out,
+    WB_rd_out, WB_RFWrite_out, WB_done_out,
+    DMReadStall
+);
     input  [11:2] Addr;
     input  [31:0] WD;
     input         clk;
+    input         rst;
     input         DMCtrl;
+
+    input  [31:0] EX_WD_in;
+    input  [31:0] EX_PCA4_in;
+    input  [4:0]  EX_rd_in;
+    input  [1:0]  EX_WDSel_in;
+    input         EX_RFWrite_in;
+    input         EX_DMCtrl_in;
+    input         EX_done_in;
+
     output reg [31:0] RD;
+    output reg [31:0] MEM_WD_out;
+    output reg [31:0] MEM_PCA4_out;
+    output reg [4:0]  MEM_rd_out;
+    output reg [1:0]  MEM_WDSel_out;
+    output reg        MEM_RFWrite_out;
+    output reg        MEM_DMCtrl_out;
+    output reg        MEM_done_out;
+
+    output reg [4:0]  MEMStall_rd_out;
+    output reg [1:0]  MEMStall_WDSel_out;
+    output reg        MEMStall_RFWrite_out;
+    output reg        MEMStall_done_out;
+    output reg        MEMStall_stall_out;
+
+    output reg [4:0]  WB_rd_out;
+    output reg        WB_RFWrite_out;
+    output reg        WB_done_out;
+
+    output        DMReadStall;
 
     reg [31:0] memory[0:1023];
 
-    always @(posedge clk) begin
-        if (DMCtrl) begin
-            memory[Addr] <= WD;
+    assign DMReadStall = (MEM_RFWrite_out == 1'b1) && (MEM_WDSel_out == `WDSel_FromMEM);
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            MEM_WD_out <= 32'b0;
+            MEM_PCA4_out <= 32'b0;
+            MEM_rd_out <= 5'b0;
+            MEM_WDSel_out <= 2'b0;
+            MEM_RFWrite_out <= 1'b0;
+            MEM_DMCtrl_out <= 1'b0;
+            MEM_done_out <= 1'b0;
+        end else begin
+            MEM_WD_out <= EX_WD_in;
+            MEM_PCA4_out <= EX_PCA4_in;
+            MEM_rd_out <= EX_rd_in;
+            MEM_WDSel_out <= EX_WDSel_in;
+            MEM_RFWrite_out <= EX_RFWrite_in;
+            MEM_DMCtrl_out <= EX_DMCtrl_in;
+            MEM_done_out <= EX_done_in;
         end
-        else begin
+    end
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            MEMStall_rd_out <= 5'b0;
+            MEMStall_WDSel_out <= 2'b0;
+            MEMStall_RFWrite_out <= 1'b0;
+            MEMStall_done_out <= 1'b0;
+            MEMStall_stall_out <= 1'b0;
+        end else begin
+            MEMStall_rd_out <= DMReadStall ? MEM_rd_out : 5'b0;
+            MEMStall_WDSel_out <= DMReadStall ? MEM_WDSel_out : 2'b0;
+            MEMStall_RFWrite_out <= DMReadStall ? MEM_RFWrite_out : 1'b0;
+            MEMStall_done_out <= DMReadStall ? MEM_done_out : 1'b0;
+            MEMStall_stall_out <= DMReadStall;
+        end
+    end
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            WB_rd_out <= 5'b0;
+            WB_RFWrite_out <= 1'b0;
+            WB_done_out <= 1'b0;
+        end else begin
+            WB_rd_out <= MEMStall_stall_out ? MEMStall_rd_out : MEM_rd_out;
+            WB_RFWrite_out <= DMReadStall ? 1'b0 : (MEMStall_stall_out ? MEMStall_RFWrite_out : MEM_RFWrite_out);
+            WB_done_out <= DMReadStall ? 1'b0 : (MEMStall_stall_out ? MEMStall_done_out : MEM_done_out);
+        end
+    end
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            RD <= 32'b0;
+        end else if (DMCtrl) begin
+            memory[Addr] <= WD;
+        end else begin
             RD <= memory[Addr];
         end
     end
