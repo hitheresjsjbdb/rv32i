@@ -8,41 +8,50 @@ module ALU(A,B,ALUOp,zero,ALU_result);
     output zero;
     output reg signed [31:0] ALU_result;
 
-assign zero = (ALU_result == 32'b0);
+// Branch compare is better driven by direct operand compare than ALU-result fanout.
+assign zero = (A == B);
 
-wire ADD, SUB, AND, OR, XOR, SRA, SLL, SRL, BR;
+wire [4:0] SHAMT;
+wire [31:0] B_ADDSUB;
+wire signed [31:0] ADD_RESULT;
+wire signed [31:0] SUB_RESULT;
+wire signed [31:0] LOGIC_RESULT;
+wire signed [31:0] SHIFT_RESULT;
+wire SUB_MODE;
 
-assign ADD = (ALUOp == `ALUOp_ADD);
-assign SUB = (ALUOp == `ALUOp_SUB);
-assign AND = (ALUOp == `ALUOp_AND);
-assign OR  = (ALUOp == `ALUOp_OR);
-assign XOR = (ALUOp == `ALUOp_XOR);
-assign SRA = (ALUOp == `ALUOp_SRA);
-assign SLL = (ALUOp == `ALUOp_SLL);
-assign SRL = (ALUOp == `ALUOp_SRL);
-assign BR  = (ALUOp == `ALUOp_BR);
+assign SHAMT = B[4:0];
+
+// Share one add/sub datapath: A + (B xor sub_mask) + cin.
+assign SUB_MODE = (ALUOp == `ALUOp_SUB);
+assign B_ADDSUB = B ^ {32{SUB_MODE}};
+assign ADD_RESULT = A + B;
+assign SUB_RESULT = $signed($unsigned(A) + $unsigned(B_ADDSUB) + {31'b0, SUB_MODE});
+
+assign LOGIC_RESULT =
+    (ALUOp == `ALUOp_AND) ? (A & B) :
+    (ALUOp == `ALUOp_OR)  ? (A | B) :
+    (ALUOp == `ALUOp_XOR) ? (A ^ B) :
+    32'sb0;
+
+assign SHIFT_RESULT =
+    (ALUOp == `ALUOp_SRA) ? (A >>> SHAMT) :
+    (ALUOp == `ALUOp_SLL) ? (A << SHAMT) :
+    (ALUOp == `ALUOp_SRL) ? $signed($unsigned(A) >> SHAMT) :
+    32'sb0;
 
 always @(*) begin
+    // synopsys parallel_case full_case
     case (ALUOp)
-        `ALUOp_ADD: ALU_result = A + B;
-        `ALUOp_SUB: ALU_result = A - B;
-        `ALUOp_AND: ALU_result = A & B;
-        `ALUOp_OR : ALU_result = A | B;
-        `ALUOp_XOR: ALU_result = A ^ B;
-        `ALUOp_SRA: ALU_result = A >>> B[4:0];
-        `ALUOp_SLL: ALU_result = A << B[4:0];
-        `ALUOp_SRL: ALU_result = $unsigned(A) >> B[4:0];
-        `ALUOp_BR : ALU_result = A - B;
-        default   : ALU_result = 32'b0;
+        `ALUOp_ADD: ALU_result = ADD_RESULT;
+        `ALUOp_SUB: ALU_result = SUB_RESULT;
+        `ALUOp_AND,
+        `ALUOp_OR,
+        `ALUOp_XOR: ALU_result = LOGIC_RESULT;
+        `ALUOp_SRA,
+        `ALUOp_SLL,
+        `ALUOp_SRL: ALU_result = SHIFT_RESULT;
+        default:    ALU_result = 32'sb0;
     endcase
-    // ALU_result = ({32{ADD}} & (A + B)) |
-    //              ({32{SUB}} & (A - B)) |
-    //              ({32{AND}} & (A & B)) |
-    //              ({32{OR} } & (A | B)) |
-    //              ({32{XOR}} & (A ^ B)) |
-    //              ({32{SRA}} & (A >>> B[4:0])) |
-    //              ({32{SLL}} & (A << B[4:0])) |
-    //              ({32{SRL}} & ($unsigned(A) >> B[4:0]));
 end
 
 endmodule
