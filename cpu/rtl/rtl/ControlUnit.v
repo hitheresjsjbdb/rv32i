@@ -39,9 +39,13 @@ module ControlUnit(
     input [31:0] IF_PC_in,
     input [31:0] RD1_in,
     input [31:0] RD2_in,
+    input [31:0] RD1_r,
+    input [31:0] RD2_r,
     input [31:0] WB_WD_in,
     input [31:0] EX_WD_in,
     input [31:0] EX_PCA4_in,
+    input [31:0] ALU_result,
+    input [31:0] ALU_result_r,
     input [31:0] WD_in,
     input [31:0] NPC_NPC_in,
     input WB_RFWrite,
@@ -62,6 +66,8 @@ module ControlUnit(
     output [4:0] ID_rs1_out,
     output [4:0] ID_rs2_out,
     output [4:0] ID_rd_out,
+    output [31:0] EX_RD1_out,
+    output [31:0] EX_RD2_out,
     output [3:0] EX_ALUOp,
     output [1:0] EX_RegSel,
     output [1:0] EX_ALUSrcB,
@@ -100,6 +106,10 @@ reg IF_done_reg;
 wire [31:0] ID_Imm32_pipe;
 wire [31:0] ID_PCA4_pipe, ID_PC_pipe;
 wire WBID_forward1, WBID_forward2;
+wire MEMID_forward1, MEMID_forward2;
+wire EXID_forward1, EXID_forward2;
+wire MEMEX_forward1, MEMEX_forward2;
+
 wire MEM_RFWrite_out, MEM_done_out;
 wire [4:0] MEMStall_rd_out;
 wire MEMStall_RFWrite_out, MEMStall_done_out;
@@ -107,40 +117,41 @@ wire WB_done_out;
 wire [31:0] MEM_dnpc_out, MEMStall_dnpc_out, WB_dnpc_out;
 always @(*) RFWrite = RFWrite_tmp;
 
-assign bubble = (((rs1 == EX_rd || rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_rd != 5'b0) ||
-                 ((rs1 == ID_rd_out || rs2 == ID_rd_out) && ID_RFWrite == 1'b1 && ID_rd_out != 5'b0) ||
-                 (ID_WDSel == `WDSel_FromMEM && ID_RFWrite == 1'b1) ||
-                 ((rs1 == MEM_rd || rs2 == MEM_rd) && DMReadStall == 1'b1)) && (branch != 1'b1);
+// IF stage
+// hazard detection and stall signal generation
+assign bubble = (branch != 1'b1) &&
+                (((rs1 == EX_rd || rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_rd != 5'b0 && EX_WDSel == `WDSel_FromMEM) ||
+                 //((rs1 == ID_rd_out || rs2 == ID_rd_out) && ID_RFWrite == 1'b1 && ID_rd_out != 5'b0) ||
+                 (ID_WDSel == `WDSel_FromMEM && ID_RFWrite == 1'b1) ||  // lw hazard
+                 ((rs1 == MEM_rd || rs2 == MEM_rd) && DMReadStall == 1'b1));
 
+// ID stage forward
+
+// read and write RF at the same cycle
 assign WBID_forward1 = (ID_rs1_out == WB_rd) && (WB_RFWrite == 1'b1) && (WB_rd != 5'b0);
 assign WBID_forward2 = (ID_rs2_out == WB_rd) && (WB_RFWrite == 1'b1) && (WB_rd != 5'b0);
-assign ID_RD1_out = WBID_forward1 ? WB_WD_in : RD1_in;
-assign ID_RD2_out = WBID_forward2 ? WB_WD_in : RD2_in;
+
+// EX to 2nd
+assign MEMID_forward1 = (ID_rs1_out == MEM_rd) && (MEM_RFWrite_out == 1'b1) && (MEM_WDSel_out == `WDSel_FromALU) && (MEM_rd != 5'b0);
+assign MEMID_forward2 = (ID_rs2_out == MEM_rd) && (MEM_RFWrite_out == 1'b1) && (MEM_WDSel_out == `WDSel_FromALU) && (MEM_rd != 5'b0);
+
+// EX to 1st
+assign EXID_forward1 = (ID_rs1_out == EX_rd_out) && (EX_RFWrite == 1'b1) && (EX_rd_out != 5'b0) && (EX_WDSel == `WDSel_FromALU);
+assign EXID_forward2 = (ID_rs2_out == EX_rd_out) && (EX_RFWrite == 1'b1) && (EX_rd_out != 5'b0) && (EX_WDSel == `WDSel_FromALU);
+
+// forwarding
+assign ID_RD1_out = EXID_forward1 ? ALU_result : (MEMID_forward1 ? ALU_result_r : (WBID_forward1 ? WB_WD_in : RD1_in));
+assign ID_RD2_out = EXID_forward2 ? ALU_result : (MEMID_forward2 ? ALU_result_r : (WBID_forward2 ? WB_WD_in : RD2_in));
+
 assign ID_zero = (ID_RD1_out == ID_RD2_out);
 
-// assign done = State == `FSMState_IF;
+// // EX stage forward
+// Flopr #(.WIDTH(1)) U_MEMEX_forward1 (.clk(clk), .rst(rst), .en(1'b1), .in_data(EXID_forward1), .out_data(MEMEX_forward1));
+// Flopr #(.WIDTH(1)) U_MEMEX_forward2 (.clk(clk), .rst(rst), .en(1'b1), .in_data(EXID_forward2), .out_data(MEMEX_forward2));
 
-// always @(posedge clk or posedge rst) begin
-//     if (rst) State <= `FSMState_IF;
-//     else State <= NxtState;
-// end
-
-// always @(posedge clk or posedge rst) begin
-//     if (rst) PCWrite <= 1'b0;
-//     else PCWrite <= NxtState == `FSMState_IF;
-// end
-
-// always @(*) begin
-//     case (State)
-//         `FSMState_IF:       NxtState = `FSMState_DECODE;
-//         `FSMState_DECODE:   NxtState = `FSMState_EXEC;
-//         `FSMState_EXEC:     NxtState = AR ? `FSMState_ALUR : MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
-//         `FSMState_ALUR:     NxtState = MEM ? `FSMState_MEM : WB ? `FSMState_WB : `FSMState_IF;
-//         `FSMState_MEM:      NxtState = WB ? `FSMState_WB : `FSMState_IF;
-//         `FSMState_WB:       NxtState = `FSMState_IF;
-//         default:            NxtState = `FSMState_IF;
-//     endcase
-// end
+// //forwarding
+// assign EX_RD1_out = MEMEX_forward1 ? ALU_result_r : RD1_r;
+// assign EX_RD2_out = MEMEX_forward2 ? ALU_result_r : RD2_r;
 
 always @(*) begin
     // Safe defaults: sequential fetch, no write-back side effects.
@@ -367,7 +378,7 @@ end
 Flopr #(.WIDTH(1), .USE_EN(1)) U_branch (.clk(clk), .rst(rst), .en(1'b1), .in_data(branch ? 1'b0 : ID_NPCOp != `NPC_PC), .out_data(branch));
 Flopr #(.WIDTH(2), .USE_EN(1)) U_NPCOp (.clk(clk), .rst(rst), .en(1'b1), .in_data(branch ? `NPC_PC : ID_NPCOp), .out_data(EX_NPCOp));
 
-Flopr #(.WIDTH(32), .USE_EN(1)) U_EXMEM_WD (.clk(clk), .rst(rst), .en(1'b1), .in_data(EX_WD_in), .out_data(MEM_WD_out));
+Flopr #(.WIDTH(32), .USE_EN(1)) U_EXMEM_WD (.clk(clk), .rst(rst), .en(1'b1), .in_data(RD2_r), .out_data(MEM_WD_out));
 Flopr #(.WIDTH(32), .USE_EN(1)) U_EXMEM_PCA4 (.clk(clk), .rst(rst), .en(1'b1), .in_data(EX_PCA4_in), .out_data(MEM_PCA4_out));
 Flopr #(.WIDTH(5), .USE_EN(1)) U_EXMEM_rd (.clk(clk), .rst(rst), .en(1'b1), .in_data(EX_rd), .out_data(MEM_rd_out));
 Flopr #(.WIDTH(2), .USE_EN(1)) U_EXMEM_WDSel (.clk(clk), .rst(rst), .en(1'b1), .in_data(EX_WDSel), .out_data(MEM_WDSel_out));

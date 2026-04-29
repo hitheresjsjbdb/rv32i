@@ -40,7 +40,7 @@ wire [20:1] Offset20;
 wire [11:0] Offset;
 wire [4:0] WR;
 wire [31:0] WD;
-wire [31:0] RD1, RD1_r, RD2, RD2_r;
+wire [31:0] RD1, RD1_r, RD2, RD2_r, EX_RD1, EX_RD2;
 wire [31:0] A, B, ALU_result, ALU_result_r;
 
 wire IF_bubble, MEM_DMReadStall, MEMStall_stall, WB_RFWrite, EX_branch, cu_zero;
@@ -77,7 +77,7 @@ ControlUnit U_ControlUnit(
     .clk(clk), .rst(rst), .zero(cu_zero), .opcode(EX_branch ? 7'b0 : opcode), .Funct7(Funct7), .Funct3(Funct3),
     .rs1(rs1), .rs2(rs2), .EX_rd(EX_rd), .MEM_rd(MEM_rd), .WB_rd(WB_rd), .rd_in(rd),
     .Imm12_in(Imm12), .Imm32_in(Imm32), .Offset_in(Offset), .Offset20_in(Offset20), .IF_PCA4_in(IF_PCA4), .IF_PC_in(IF_PC),
-    .RD1_in(RD1), .RD2_in(RD2), .WB_WD_in(WB_WD),
+    .RD1_in(RD1), .RD2_in(RD2), .WB_WD_in(WB_WD), .ALU_result(ALU_result), .ALU_result_r(ALU_result_r), .RD1_r(RD1_r), .RD2_r(RD2_r), .EX_RD1_out(EX_RD1), .EX_RD2_out(EX_RD2),
     .EX_WD_in(RD2_r), .EX_PCA4_in(EX_PCA4), .WD_in(WD), .NPC_NPC_in(NPC),
     .WB_RFWrite(WB_RFWrite), .bubble(IF_bubble),
     .ID_RD1_out(ID_RD1), .ID_RD2_out(ID_RD2), .ID_zero(cu_zero),
