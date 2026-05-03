@@ -15,7 +15,7 @@ SEMU_INC_DIR := $(SEMU_DIR)/include
 VERILATOR  := verilator
 
 # ===================== 自动收集文件 =====================
-VSRCS := $(wildcard $(RTL_DIR)/*.v)
+VSRCS := $(filter-out $(RTL_DIR)/riscv_original.v,$(wildcard $(RTL_DIR)/*.v))
 
 SEMU_SRCS := $(shell find $(SEMU_SRC_DIR) -name "*.cpp")
 
@@ -49,7 +49,6 @@ $(TARGET):
 		$(SEMU_SRCS) \
 		-CFLAGS "$(CXXFLAGS)" \
 		-LDFLAGS "$(LDFLAGS)"
-		-o sim
 
 	@mv obj_dir/Vriscv $(TARGET)
 

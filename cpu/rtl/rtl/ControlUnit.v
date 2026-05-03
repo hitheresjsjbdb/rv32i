@@ -8,7 +8,9 @@ module ControlUnit(
     input rst,
     input clk,
     input zero,
+    input branch_zero,
     input [6:0] opcode,
+    input [6:0] opcode_pipe,
     input [6:0] Funct7,
     input [2:0] Funct3,
     output reg PCWrite,
@@ -20,7 +22,7 @@ module ControlUnit(
     output reg ALUSrcA,
     output reg [1:0] ALUSrcB,
     output reg [1:0] RegSel,
-    output reg [1:0] NPCOp,
+    output reg [1:0] NPCop,
     output reg [1:0] WDSel,
     output reg [3:0] ALUOp,
 
@@ -103,6 +105,7 @@ module ControlUnit(
 reg [2:0] State, NxtState;
 reg AR, MEM, WB, EX, RFWrite_tmp;
 reg IF_done_reg;
+wire [6:0] opcode_sel;
 wire [31:0] ID_Imm32_pipe;
 wire [31:0] ID_PCA4_pipe, ID_PC_pipe;
 wire WBID_forward1, WBID_forward2;
@@ -116,6 +119,7 @@ wire MEMStall_RFWrite_out, MEMStall_done_out;
 wire WB_done_out;
 wire [31:0] MEM_dnpc_out, MEMStall_dnpc_out, WB_dnpc_out;
 always @(*) RFWrite = RFWrite_tmp;
+assign opcode_sel = opcode_pipe;
 
 // IF stage
 // hazard detection and stall signal generation
@@ -168,11 +172,11 @@ always @(*) begin
     ALUSrcA  = `ALUSrcA_A;
     ALUSrcB  = `ALUSrcB_B;
     RegSel   = `RegSel_rd;
-    NPCOp    = `NPC_PC;
+    NPCop    = `NPC_PC;
     WDSel    = `WDSel_FromALU;
     ALUOp    = `ALUOp_ADD;
 
-    case (opcode)
+    case (opcode_sel)
         // R-type (8): add/sub/and/or/xor/sll/srl/sra
         `INSTR_RTYPE_OP: begin
             RFWrite_tmp = 1'b1;
@@ -257,16 +261,16 @@ always @(*) begin
             MEM = 1'b0;
             EX = 1'b1;
             case (Funct3)
-                `INSTR_BEQ_FUNCT: NPCOp = zero ? `NPC_Offset12 : `NPC_PC; // beq
-                `INSTR_BNE_FUNCT: NPCOp = zero ? `NPC_PC : `NPC_Offset12; // bne
-                default: NPCOp = `NPC_PC;
+                `INSTR_BEQ_FUNCT: NPCop = branch_zero ? `NPC_Offset12 : `NPC_PC; // beq
+                `INSTR_BNE_FUNCT: NPCop = branch_zero ? `NPC_PC : `NPC_Offset12; // bne
+                default: NPCop = `NPC_PC;
             endcase
         end
 
         // jal
         `INSTR_JAL_OP: begin
             RFWrite_tmp = 1'b1;
-            NPCOp   = `NPC_Offset20;
+            NPCop   = `NPC_Offset20;
             WDSel   = `WDSel_FromPC;
             AR = 1'b0;
             WB = 1'b1;
@@ -280,7 +284,7 @@ always @(*) begin
             ExtSel  = `ExtSel_SIGNED;
             ALUSrcB = `ALUSrcB_Imm;
             ALUOp   = `ALUOp_ADD;
-            NPCOp   = `NPC_rs;
+            NPCop   = `NPC_rs;
             WDSel   = `WDSel_FromPC;
             EX = 1'b1;
             AR = 1'b1;
@@ -306,6 +310,7 @@ wire [6:0] ID_opcode, EX_opcode;
 wire [2:0] ID_Funct3, EX_Funct3;
 reg [1:0] ID_NPCOp;
 
+/* verilator lint_off PINMISSING */
 Flopr #(.WIDTH(12), .USE_EN(1)) U_IFID_Imm12 (.clk(clk), .rst(rst), .en(1'b1), .in_data(Imm12_in), .out_data(ID_Imm12_out));
 Flopr #(.WIDTH(32), .USE_EN(1)) U_IFID_Imm32 (.clk(clk), .rst(rst), .en(1'b1), .in_data(Imm32_in), .out_data(ID_Imm32_pipe));
 Flopr #(.WIDTH(12), .USE_EN(1)) U_IFID_Offset (.clk(clk), .rst(rst), .en(1'b1), .in_data(Offset_in), .out_data(ID_Offset_out));
@@ -316,7 +321,7 @@ Flopr #(.WIDTH(5), .USE_EN(1)) U_IFID_rd (.clk(clk), .rst(rst), .en(1'b1), .in_d
 Flopr #(.WIDTH(32), .USE_EN(1)) U_IFID_PCA4 (.clk(clk), .rst(rst), .en(1'b1), .in_data(IF_PCA4_in), .out_data(ID_PCA4_pipe));
 Flopr #(.WIDTH(32), .USE_EN(1)) U_IFID_PC (.clk(clk), .rst(rst), .en(1'b1), .in_data(IF_PC_in), .out_data(ID_PC_pipe));
 
-Flopr #(.WIDTH(7), .USE_EN(1)) U_IFID_opcode (.clk(clk), .rst(rst), .en(1'b1), .in_data(bubble ? 7'b0 : opcode), .out_data(ID_opcode));
+Flopr #(.WIDTH(7), .USE_EN(1)) U_IFID_opcode (.clk(clk), .rst(rst), .en(1'b1), .in_data(bubble ? 7'b0 : opcode_sel), .out_data(ID_opcode));
 Flopr #(.WIDTH(3), .USE_EN(1)) U_IFID_Funct3 (.clk(clk), .rst(rst), .en(1'b1), .in_data(Funct3), .out_data(ID_Funct3));
 
 Flopr #(.WIDTH(4), .USE_EN(1)) U_IFID_ALUOp (.clk(clk), .rst(rst), .en(1'b1), .in_data(ALUOp), .out_data(ID_ALUOp));
@@ -350,8 +355,8 @@ always @(*) begin
     case (ID_opcode)
         `INSTR_BTYPE_OP: begin
             case (ID_Funct3)
-                `INSTR_BEQ_FUNCT: ID_NPCOp = zero ? `NPC_Offset12 : `NPC_PC; // beq
-                `INSTR_BNE_FUNCT: ID_NPCOp = zero ? `NPC_PC : `NPC_Offset12; // bne
+                `INSTR_BEQ_FUNCT: ID_NPCOp = branch_zero ? `NPC_Offset12 : `NPC_PC; // beq
+                `INSTR_BNE_FUNCT: ID_NPCOp = branch_zero ? `NPC_PC : `NPC_Offset12; // bne
                 default: ID_NPCOp = `NPC_PC;
             endcase
         end
@@ -403,6 +408,7 @@ Flopr #(.WIDTH(32), .USE_EN(1)) U_WB_WD (.clk(clk), .rst(rst), .en(1'b1), .in_da
 Flopr #(.WIDTH(32), .USE_EN(1)) U_WB_dnpc (.clk(clk), .rst(rst), .en(1'b1), .in_data(MEMStall_stall_out ? MEMStall_dnpc_out : MEM_dnpc_out), .out_data(WB_dnpc_out));
 Flopr #(.WIDTH(1), .USE_EN(1)) U_done (.clk(clk), .rst(rst), .en(1'b1), .in_data(WB_done_out), .out_data(done_out));
 Flopr #(.WIDTH(32), .USE_EN(1)) U_dnpc (.clk(clk), .rst(rst), .en(1'b1), .in_data(WB_dnpc_out), .out_data(dnpc_out));
+/* verilator lint_on PINMISSING */
 
 
 endmodule

@@ -8,20 +8,23 @@ set TOP            riscv
 set CLK_PORT       clk
 set RST_PORT       rst
 set CLK_PERIOD_NS  4.0
-set ALU_HOT_PATH_MARGIN    0.90
+set ALU_HOT_PATH_MARGIN    0.86
 set BRANCH_HOT_PATH_MARGIN 0.92
 set BRANCH_PC_HOT_PATH_MARGIN 0.88
 set OFFSET_HOT_PATH_MARGIN 0.90
-set HOT_ALU_WEIGHT         30
+set HOT_ALU_WEIGHT         60
 set HOT_BRANCH_WEIGHT      35
 set HOT_BRANCH_PC_WEIGHT   45
 set HOT_OFFSET_WEIGHT      40
-set HOT_ALU_CRANGE_NS      0.06
+set HOT_ALU_CRANGE_NS      0.30
 set HOT_BRANCH_CRANGE_NS   0.04
 set HOT_BRANCH_PC_CRANGE_NS 0.02
 set HOT_OFFSET_CRANGE_NS   0.04
 set ENABLE_HOTPATH_STEERING 1
 set ENABLE_HOTSPOT_FLATTEN 1
+set RELEASE_HOTPATH_DONT_TOUCH 1
+set HOTPATH_EXTRA_INCREMENTAL_PASSES 2
+set ENABLE_ADAPTIVE_RETIMING 1
 
 # Library naming follows your existing setup.
 set LIB_NAME       tcbn65lpwc
@@ -104,7 +107,8 @@ set_critical_range [expr {$CLK_PERIOD_NS * 0.10}] [current_design]
 #   U_ControlUnit/U_branch/out_reg[0] -> U_PC/PC_reg[31]
 #   U_IDEX_ALUOp/out_reg[0]          -> U_ALUOut/out_data_reg[31]
 #   U_IDEX_Offset/out_reg[*]          -> U_IF_PCA4/out_reg[*]
-if {$ENABLE_HOTPATH_STEERING} {
+proc refresh_hotpath_collections {} {
+  global ALU_FROM ALU_TO BR_FROM OFFSET_FROM BR_TO_IFPCA4 BR_TO_PC CORE_REGS
   set CORE_REGS [all_registers -clock core_clk]
 
   set ALU_FROM [filter_collection $CORE_REGS "full_name =~ *U_ControlUnit/U_IDEX_ALUOp/out_reg* || full_name =~ *U_IDEX_ALUOp/out_reg* || full_name =~ *U_ControlUnit/U_IDEX_ALUOp/out_data_reg* || full_name =~ *U_IDEX_ALUOp/out_data_reg*"]
@@ -114,6 +118,25 @@ if {$ENABLE_HOTPATH_STEERING} {
   set OFFSET_FROM [filter_collection $CORE_REGS "full_name =~ *U_ControlUnit/U_IDEX_Offset/out_reg* || full_name =~ *U_IDEX_Offset/out_reg* || full_name =~ *U_ControlUnit/U_IDEX_Offset/out_data_reg* || full_name =~ *U_IDEX_Offset/out_data_reg*"]
   set BR_TO_IFPCA4 [filter_collection $CORE_REGS "full_name =~ *U_IF_PCA4/out_reg* || full_name =~ *U_IF_PCA4/out_data_reg*"]
   set BR_TO_PC [filter_collection $CORE_REGS "full_name =~ *U_PC/PC_reg* || full_name =~ *U_PC/out_reg*"]
+}
+
+if {$ENABLE_HOTPATH_STEERING} {
+  refresh_hotpath_collections
+
+  # If RTL/debug attributes propagated dont_touch into this cone,
+  # clear them for this synthesis run so the optimizer can reshape logic.
+  if {$RELEASE_HOTPATH_DONT_TOUCH} {
+    set HOT_RELEASE_CELLS [get_cells -hier -quiet {U_ControlUnit U_IDEX_ALUOp U_ALU U_ALUOut}]
+    if {[sizeof_collection $HOT_RELEASE_CELLS] > 0} {
+      catch {remove_attribute $HOT_RELEASE_CELLS dont_touch}
+    }
+    if {[sizeof_collection $ALU_FROM] > 0} { catch {remove_attribute $ALU_FROM dont_touch} }
+    if {[sizeof_collection $ALU_TO] > 0} { catch {remove_attribute $ALU_TO dont_touch} }
+    if {[sizeof_collection $BR_FROM] > 0} { catch {remove_attribute $BR_FROM dont_touch} }
+    if {[sizeof_collection $OFFSET_FROM] > 0} { catch {remove_attribute $OFFSET_FROM dont_touch} }
+    if {[sizeof_collection $BR_TO_IFPCA4] > 0} { catch {remove_attribute $BR_TO_IFPCA4 dont_touch} }
+    if {[sizeof_collection $BR_TO_PC] > 0} { catch {remove_attribute $BR_TO_PC dont_touch} }
+  }
 
   redirect ${REPORT_DIR}/hotpath_match.rpt {
     echo "ALU_FROM count       : [sizeof_collection $ALU_FROM]"
@@ -172,11 +195,42 @@ if {$ENABLE_HOTSPOT_FLATTEN} {
 set_fix_multiple_port_nets -all -buffer_constants
 set_cost_priority -delay
 
+# Optional retiming setup for deep reg2reg combinational cones.
+if {$ENABLE_ADAPTIVE_RETIMING} {
+  catch {
+    set_optimize_registers true -design $TOP -clock core_clk -delay_threshold $CLK_PERIOD_NS
+  }
+}
+
+set RETIME_ACTIVE 0
+
 # Pass-1: global mapping and timing-oriented optimization
-compile_ultra -timing_high_effort_script
+if {$ENABLE_ADAPTIVE_RETIMING} {
+  if {[catch {compile_ultra -retime -timing_high_effort_script} RETIME_ERR]} {
+    echo "WARN: compile_ultra -retime unavailable, fallback to non-retime flow: $RETIME_ERR"
+    compile_ultra -timing_high_effort_script
+  } else {
+    set RETIME_ACTIVE 1
+  }
+} else {
+  compile_ultra -timing_high_effort_script
+}
 
 # Pass-2: incremental closure on critical paths
-compile_ultra -incremental -timing_high_effort_script
+if {$RETIME_ACTIVE} {
+  compile_ultra -incremental -retime -timing_high_effort_script
+} else {
+  compile_ultra -incremental -timing_high_effort_script
+}
+
+# Optional extra incremental passes for hot-path closure.
+for {set i 0} {$i < $HOTPATH_EXTRA_INCREMENTAL_PASSES} {incr i} {
+  if {$RETIME_ACTIVE} {
+    compile_ultra -incremental -retime -timing_high_effort_script
+  } else {
+    compile_ultra -incremental -timing_high_effort_script
+  }
+}
 
 #=============================== Reports ========================================
 check_timing > ${REPORT_DIR}/check_timing.rpt
@@ -193,6 +247,22 @@ report_timing -delay_type min -max_paths 20 -nworst 1 \
   > ${REPORT_DIR}/timing_hold_top20.rpt
 
 if {$ENABLE_HOTPATH_STEERING} {
+  refresh_hotpath_collections
+  redirect ${REPORT_DIR}/hotpath_match.postcompile.rpt {
+    echo "ALU_FROM count       : [sizeof_collection $ALU_FROM]"
+    if {[sizeof_collection $ALU_FROM] > 0} { query_objects $ALU_FROM }
+    echo "ALU_TO count         : [sizeof_collection $ALU_TO]"
+    if {[sizeof_collection $ALU_TO] > 0} { query_objects $ALU_TO }
+    echo "BR_FROM count        : [sizeof_collection $BR_FROM]"
+    if {[sizeof_collection $BR_FROM] > 0} { query_objects $BR_FROM }
+    echo "OFFSET_FROM count    : [sizeof_collection $OFFSET_FROM]"
+    if {[sizeof_collection $OFFSET_FROM] > 0} { query_objects $OFFSET_FROM }
+    echo "BR_TO_IFPCA4 count   : [sizeof_collection $BR_TO_IFPCA4]"
+    if {[sizeof_collection $BR_TO_IFPCA4] > 0} { query_objects $BR_TO_IFPCA4 }
+    echo "BR_TO_PC count       : [sizeof_collection $BR_TO_PC]"
+    if {[sizeof_collection $BR_TO_PC] > 0} { query_objects $BR_TO_PC }
+  }
+
   if {[sizeof_collection $ALU_FROM] > 0 && [sizeof_collection $ALU_TO] > 0} {
     report_timing -delay_type max -max_paths 10 -nworst 1 \
       -from $ALU_FROM -to $ALU_TO -transition_time -capacitance -nets \
