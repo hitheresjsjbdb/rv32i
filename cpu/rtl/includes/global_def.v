@@ -1,2 +1,3 @@
-// `define DEBUG 0
-`define difftest 1
+// `define DEBUG 1
+`define DIFFTEST 1
+//`define SRAM 1

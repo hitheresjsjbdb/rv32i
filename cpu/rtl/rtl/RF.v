@@ -38,7 +38,7 @@ end
 assign RD1 = forward1 ? FD1 : register[RF_RR1];
 assign RD2 = forward2 ? FD2 : register[RF_RR2];
 
-`ifdef difftest
+`ifdef DIFFTEST
 
 export "DPI-C" function DPI_getReg;
 function int DPI_getReg(input int idx);

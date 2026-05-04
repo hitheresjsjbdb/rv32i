@@ -43,12 +43,3 @@
 // DM control signal
 `define DMCtrl_RD    1'b0
 `define DMCtrl_WR    1'b1
-
-
-// FSM control signal
-`define FSMState_IF     3'b000
-`define FSMState_DECODE 3'b001
-`define FSMState_EXEC   3'b010
-`define FSMState_ALUR   3'b011
-`define FSMState_MEM    3'b100
-`define FSMState_WB     3'b101

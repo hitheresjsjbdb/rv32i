@@ -21,12 +21,13 @@
 // 
 //////////////////////////////////////////////////////////////////////////////////
 module riscv(clk, rst
-`ifdef difftest
+`ifdef DIFFTEST
 , done
 `endif
 );
 input clk, rst;
-`ifdef difftest
+
+`ifdef DIFFTEST
 output done;
 `endif
 
@@ -126,7 +127,7 @@ ControlUnit U_ControlUnit(
     .DM_WD(DM_WD)
 
 
-`ifdef difftest
+`ifdef DIFFTEST
     , .done(done)
 `endif
 
@@ -159,7 +160,7 @@ IM U_IM (
 
 // ÊuÀý»- IR
 IR U_IR (
-    /*.clk(clk),*/ .IRWrite(IRWrite), .in_ins(in_ins), .out_ins(out_ins)
+    .IRWrite(IRWrite), .in_ins(in_ins), .out_ins(out_ins)
 );
 
 // ÊuÀý»- RF
