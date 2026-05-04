@@ -3,8 +3,8 @@
 module Flopr #(parameter WIDTH = 32)(clk, rst, in_data, out_data);
     input         clk;
     input         rst;
-    input  [31:0] in_data;
-    output reg [31:0] out_data;
+    input  [WIDTH-1:0] in_data;
+    output reg [WIDTH-1:0] out_data;
 
     always @(posedge clk or posedge rst) begin
         if (rst) begin
