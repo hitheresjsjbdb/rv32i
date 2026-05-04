@@ -279,9 +279,14 @@ end
 
 // hazard detect (generate bubbles -> pipeline stalling)
 assign IF_stall = (branch != 1'b1) &&
-                (((rs1 == EX_rd || rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_rd != 5'b0 && EX_WDSel == `WDSel_FromMEM) ||
+                (((ID_rs1 == EX_rd || ID_rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_rd != 5'b0 && EX_WDSel == `WDSel_FromMEM) ||
                  (ID_WDSel == `WDSel_FromMEM && ID_RFWrite == 1'b1) ||  // lw hazard
-                 ((rs1 == MEM_rd || rs2 == MEM_rd) && MEM_DMReadStall == 1'b1));
+                 ((ID_rs1 == MEM_rd || ID_rs2 == MEM_rd) && MEM_DMReadStall == 1'b1) ||
+                 // The synchronous DM read value becomes architecturally usable one cycle
+                 // after MEM_DMReadStall. Keep dependent instructions parked until the
+                 // MEMStall slot can write back / forward the load result.
+                 ((ID_rs1 == MEMStall_rd || ID_rs2 == MEMStall_rd) &&
+                  MEMStall_stall == 1'b1 && MEMStall_RFWrite == 1'b1 && MEMStall_rd != 5'b0));
 
 always @(*) begin
     PC_NPC  = EX_branch ? NPC_NPC + 4 : IF_stall ? IF_PCA4 : NPC_NPC;
@@ -346,8 +351,8 @@ always @(*) begin
 
 end
 
-Flopr #(.WIDTH(1)) U_branch (.clk(clk), .rst(rst), .in_data(EX_branch ? 1'b0 : ID_NPCOp != `NPC_PC), .out_data(EX_branch));
-Flopr #(.WIDTH(2)) U_NPCOp (.clk(clk), .rst(rst), .in_data(EX_branch ? `NPC_PC : ID_NPCOp), .out_data(EX_NPCOp));
+Flopr #(.WIDTH(1)) U_branch (.clk(clk), .rst(rst), .in_data((IF_stall || EX_branch) ? 1'b0 : ID_NPCOp != `NPC_PC), .out_data(EX_branch));
+Flopr #(.WIDTH(2)) U_NPCOp (.clk(clk), .rst(rst), .in_data((IF_stall || EX_branch) ? `NPC_PC : ID_NPCOp), .out_data(EX_NPCOp));
 
 /* ################################ EX ################################ */
 

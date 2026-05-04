@@ -7,3 +7,9 @@
 /cpu/obj_dir
 /cpu/*.vcd
 cpu/riscv-tests-batch/summary.txt
+riscv_original.v
+cpu/server_code.hex
+cpu/riscv-tests-batch/build
+cpu/riscv-tests-batch/logs
+reports
+wave.vcd
