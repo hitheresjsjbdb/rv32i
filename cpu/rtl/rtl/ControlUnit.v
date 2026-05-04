@@ -155,8 +155,8 @@ always @(*) begin
     NPC_EX_Offset12 = EX_Offset;
     MUX_WB_rd       = WB_rd;
     EXT_ID_Imm12    = ID_Imm12;
-    forward1        = (WBID_forward1 || MEMID_forward1 || EXID_forward1);
-    forward2        = (WBID_forward2 || MEMID_forward2 || EXID_forward2);
+    forward1        = (WBID_forward1 || MEMID_forward1);
+    forward2        = (WBID_forward2 || MEMID_forward2);
     FD1             = ID_RD1;
     FD2             = ID_RD2;
     ALU_B_Imm       = EX_Imm32;
@@ -278,10 +278,11 @@ always @(*) begin
 end
 
 // hazard detect (generate bubbles -> pipeline stalling)
-assign IF_stall = (branch != 1'b1) &&
+assign IF_stall = (EX_branch != 1'b1) &&
                 (((rs1 == EX_rd || rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_rd != 5'b0 && EX_WDSel == `WDSel_FromMEM) ||
                  (ID_WDSel == `WDSel_FromMEM && ID_RFWrite == 1'b1) ||  // lw hazard
-                 ((rs1 == MEM_rd || rs2 == MEM_rd) && MEM_DMReadStall == 1'b1));
+                 ((rs1 == MEM_rd || rs2 == MEM_rd) && MEM_DMReadStall == 1'b1) ||
+                 ((rs1 == ID_rd || rs2 == ID_rd) && ID_RFWrite == 1'b1 && ID_rd != 5'b0));
 
 always @(*) begin
     PC_NPC  = EX_branch ? NPC_NPC + 4 : IF_stall ? IF_PCA4 : NPC_NPC;
@@ -305,13 +306,9 @@ assign WBID_forward2 = (ID_rs2 == WB_rd) && (WB_RFWrite == 1'b1) && (WB_rd != 5'
 assign MEMID_forward1 = (ID_rs1 == MEM_rd) && (MEM_RFWrite == 1'b1) && (MEM_WDSel == `WDSel_FromALU) && (MEM_rd != 5'b0);
 assign MEMID_forward2 = (ID_rs2 == MEM_rd) && (MEM_RFWrite == 1'b1) && (MEM_WDSel == `WDSel_FromALU) && (MEM_rd != 5'b0);
 
-// EX to 1st
-assign EXID_forward1 = (ID_rs1 == EX_rd) && (EX_RFWrite == 1'b1) && (EX_rd != 5'b0) && (EX_WDSel == `WDSel_FromALU);
-assign EXID_forward2 = (ID_rs2 == EX_rd) && (EX_RFWrite == 1'b1) && (EX_rd != 5'b0) && (EX_WDSel == `WDSel_FromALU);
-
 // forwarding
-assign ID_RD1 = EXID_forward1 ? ALU_result : (MEMID_forward1 ? ALU_result_r : (WBID_forward1 ? WB_WD : 32'h0));
-assign ID_RD2 = EXID_forward2 ? ALU_result : (MEMID_forward2 ? ALU_result_r : (WBID_forward2 ? WB_WD : 32'h0));
+assign ID_RD1 = (MEMID_forward1 ? ALU_result_r : (WBID_forward1 ? WB_WD : 32'h0));
+assign ID_RD2 = (MEMID_forward2 ? ALU_result_r : (WBID_forward2 ? WB_WD : 32'h0));
 
 assign ID_zero = (RD1 == RD2);
 

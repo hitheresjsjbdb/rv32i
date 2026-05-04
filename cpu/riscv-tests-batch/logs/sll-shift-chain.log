@@ -1,6 +1,6 @@
 (sdb) c
 SEMU terminated successfully
 12 instruction(s) were executed
-Executed 18 clock cycle(s)
-CPI: 1.5
+Executed 23 clock cycle(s)
+CPI: 1.91667
 (sdb) q
