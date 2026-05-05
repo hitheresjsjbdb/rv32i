@@ -12,32 +12,41 @@ module ALU(A,B,ALUOp,zero,ALU_result);
 assign zero = (A == B);
 
 wire [4:0] SHAMT;
-wire [31:0] B_ADDSUB;
-wire [31:0] ADDSUB_RESULT;
-wire [32:0] ADDSUB_EXT;
+wire [31:0] ADD_RESULT;
+wire [31:0] SUB_RESULT;
+wire [32:0] ADD_EXT;
+wire [32:0] SUB_EXT;
 wire signed [31:0] LOGIC_RESULT;
 wire signed [31:0] SHIFT_RESULT;
-wire SUB_MODE;
-wire ADDSUB_CO_UNUSED;
+wire ADD_CO_UNUSED;
+wire SUB_CO_UNUSED;
 
 assign SHAMT = B[4:0];
 
-// Keep the RTL arithmetic simple for simulation, and let synthesis map only
-// the ALU add/sub datapath to a stronger implementation.
-assign SUB_MODE = (ALUOp == `ALUOp_SUB);
-assign B_ADDSUB = B ^ {32{SUB_MODE}};
+// Cut the ALUOp -> adder critical path by computing add and sub in parallel.
+// ALUOp then only selects between already-computed results.
 `ifdef SYNTHESIS
-DW01_add #(32) U_DW_ALU_ADDER (
+DW01_add #(32) U_DW_ALU_ADD (
     .A   (A),
-    .B   (B_ADDSUB),
-    .CI  (SUB_MODE),
-    .SUM (ADDSUB_RESULT),
-    .CO  (ADDSUB_CO_UNUSED)
+    .B   (B),
+    .CI  (1'b0),
+    .SUM (ADD_RESULT),
+    .CO  (ADD_CO_UNUSED)
+);
+DW01_add #(32) U_DW_ALU_SUB (
+    .A   (A),
+    .B   (~B),
+    .CI  (1'b1),
+    .SUM (SUB_RESULT),
+    .CO  (SUB_CO_UNUSED)
 );
 `else
-assign ADDSUB_EXT    = {1'b0, A} + {1'b0, B_ADDSUB} + {32'b0, SUB_MODE};
-assign ADDSUB_RESULT = ADDSUB_EXT[31:0];
-assign ADDSUB_CO_UNUSED = ADDSUB_EXT[32];
+assign ADD_EXT       = {1'b0, A} + {1'b0, B};
+assign SUB_EXT       = {1'b0, A} + {1'b0, ~B} + 33'b1;
+assign ADD_RESULT    = ADD_EXT[31:0];
+assign SUB_RESULT    = SUB_EXT[31:0];
+assign ADD_CO_UNUSED = ADD_EXT[32];
+assign SUB_CO_UNUSED = SUB_EXT[32];
 `endif
 
 assign LOGIC_RESULT =
@@ -55,8 +64,8 @@ assign SHIFT_RESULT =
 always @(*) begin
     // synopsys parallel_case full_case
     case (ALUOp)
-        `ALUOp_ADD,
-        `ALUOp_SUB: ALU_result = $signed(ADDSUB_RESULT);
+        `ALUOp_ADD: ALU_result = $signed(ADD_RESULT);
+        `ALUOp_SUB: ALU_result = $signed(SUB_RESULT);
         `ALUOp_AND,
         `ALUOp_OR,
         `ALUOp_XOR: ALU_result = LOGIC_RESULT;

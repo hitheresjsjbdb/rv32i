@@ -66,6 +66,7 @@ wire [31:0] ALU_B_Imm32;
 wire [31:0] RF_WD;
 wire [31:0] MUX_PCA4;
 wire [31:0] DM_WD;
+wire [31:0] NPC_taken_p4;
 wire [4:0]  RF_RR1, RF_RR2;
 
 assign opcode  = out_ins[6:0];
@@ -94,7 +95,7 @@ ControlUnit U_ControlUnit(
     // from PC
     .PC(PC), .PCA4(PCA4),
     // from NPC
-    .NPC(NPC),
+    .NPC(NPC), .NPC_taken_p4(NPC_taken_p4),
     // from RF
     .RD1(RD1), .RD2(RD2),
     // from EXT
@@ -147,7 +148,8 @@ NPC U_NPC (
     .PC(PC), .NPCOp(NPCOp), .Offset12(Offset), .Offset20(Offset20), .rs(RD1), .PCA4(PCA4), .NPC(NPC),
 
     /* new inputs */
-    .NPC_PC(NPC_PC), .NPC_Offset12(NPC_EX_Offset12), .NPC_Offset20(NPC_EX_Offset20), .NPC_rs(RD1_r)
+    .NPC_PC(NPC_PC), .NPC_Offset12(NPC_EX_Offset12), .NPC_Offset20(NPC_EX_Offset20), .NPC_rs(RD1_r),
+    .NPC_taken_p4(NPC_taken_p4)
 );
 
 // ÊuÀý»- IM

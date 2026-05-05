@@ -11,8 +11,7 @@ module MUX_3to1_B(X,Y,Z,control,out, Imm, Offset);
     input [11:0] Offset;
 
     always @(*) begin
-        // The B operand is preselected before the ID/EX boundary to shorten the
-        // EX-stage control-to-ALU path, while keeping the original top-level wiring.
+        
         out = Imm;
     end
 

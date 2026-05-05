@@ -6,6 +6,9 @@ module MUX_2to1_A(X,Y,control,out);
     input         control;
     output [31:0] out;
 
-    assign out = (control == 1'b0) ? X : {27'b0, Y[4:0]};
+    // In the current CPU microarchitecture ALUSrcA never selects the legacy
+    // shift-amount path, so keep the interface intact but remove the extra mux
+    // level from the ALU A-input critical path.
+    assign out = X;
 
 endmodule

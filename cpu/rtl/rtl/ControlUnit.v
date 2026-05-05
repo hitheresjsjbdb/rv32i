@@ -35,6 +35,7 @@ module ControlUnit(
     input [31:0] PC,
     input [31:0] PCA4,
     input [31:0] NPC,
+    input [31:0] NPC_taken_p4,
     input [31:0] RD1,
     input [31:0] RD2,
     input [31:0] Imm32,
@@ -143,6 +144,85 @@ wire [31:0] ID_Imm32_local;
 wire [31:0] ID_Offset32_local;
 reg  [31:0] ID_ALU_B_sel;
 wire [31:0] EX_ALU_B_sel;
+wire        dec_is_rtype;
+wire        dec_is_itype;
+wire        dec_is_lw;
+wire        dec_is_sw;
+wire        dec_is_btype;
+wire        dec_is_jal;
+wire        dec_is_jalr;
+wire        dec_r_add;
+wire        dec_r_sub;
+wire        dec_r_and;
+wire        dec_r_or;
+wire        dec_r_xor;
+wire        dec_r_sll;
+wire        dec_r_srl;
+wire        dec_r_sra;
+wire        dec_r_valid;
+wire        dec_i_addi;
+wire        dec_i_ori;
+wire        dec_i_valid;
+wire        id_is_beq;
+wire        id_is_bne;
+wire        id_take_branch;
+wire        if_dec_rfwrite;
+wire        if_dec_dmctrl;
+wire [1:0]  if_dec_alusrcb;
+wire [1:0]  if_dec_wdsel;
+wire [3:0]  if_dec_aluop;
+
+assign dec_is_rtype = (opcode == `INSTR_RTYPE_OP);
+assign dec_is_itype = (opcode == `INSTR_ITYPE_OP);
+assign dec_is_lw    = (opcode == `INSTR_LW_OP);
+assign dec_is_sw    = (opcode == `INSTR_SW_OP);
+assign dec_is_btype = (opcode == `INSTR_BTYPE_OP);
+assign dec_is_jal   = (opcode == `INSTR_JAL_OP);
+assign dec_is_jalr  = (opcode == `INSTR_JALR_OP);
+
+assign dec_r_add = dec_is_rtype && ({Funct7, Funct3} == `INSTR_ADD_FUNCT);
+assign dec_r_sub = dec_is_rtype && ({Funct7, Funct3} == `INSTR_SUB_FUNCT);
+assign dec_r_and = dec_is_rtype && ({Funct7, Funct3} == `INSTR_AND_FUNCT);
+assign dec_r_or  = dec_is_rtype && ({Funct7, Funct3} == `INSTR_OR_FUNCT);
+assign dec_r_xor = dec_is_rtype && ({Funct7, Funct3} == `INSTR_XOR_FUNCT);
+assign dec_r_sll = dec_is_rtype && ({Funct7, Funct3} == `INSTR_SLL_FUNCT);
+assign dec_r_srl = dec_is_rtype && ({Funct7, Funct3} == `INSTR_SRL_FUNCT);
+assign dec_r_sra = dec_is_rtype && ({Funct7, Funct3} == `INSTR_SRA_FUNCT);
+assign dec_r_valid = dec_r_add || dec_r_sub || dec_r_and || dec_r_or ||
+                     dec_r_xor || dec_r_sll || dec_r_srl || dec_r_sra;
+
+assign dec_i_addi = dec_is_itype && (Funct3 == `INSTR_ADDI_FUNCT);
+assign dec_i_ori  = dec_is_itype && (Funct3 == `INSTR_ORI_FUNCT);
+assign dec_i_valid = dec_i_addi || dec_i_ori;
+
+assign id_is_beq = (ID_opcode == `INSTR_BTYPE_OP) && (ID_Funct3 == `INSTR_BEQ_FUNCT);
+assign id_is_bne = (ID_opcode == `INSTR_BTYPE_OP) && (ID_Funct3 == `INSTR_BNE_FUNCT);
+assign id_take_branch = (id_is_beq && ID_zero) || (id_is_bne && !ID_zero);
+
+// RFWrite only needs opcode-class knowledge on the hot timing path.
+assign if_dec_rfwrite = dec_is_rtype || dec_is_itype || dec_is_lw || dec_is_jal || dec_is_jalr;
+assign if_dec_dmctrl = dec_is_sw ? `DMCtrl_WR : `DMCtrl_RD;
+assign if_dec_alusrcb = (dec_i_valid || dec_is_jalr) ? `ALUSrcB_Imm :
+                        ((dec_is_lw || dec_is_sw) ? `ALUSrcB_Offset : `ALUSrcB_B);
+assign if_dec_wdsel = dec_is_lw ? `WDSel_FromMEM :
+                      ((dec_is_jal || dec_is_jalr) ? `WDSel_FromPC : `WDSel_FromALU);
+assign if_dec_aluop[0] = dec_is_btype ||
+                         dec_i_ori ||
+                         (dec_is_rtype && (
+                             ((Funct3 == 3'b000) && Funct7[5]) ||
+                             (Funct3 == 3'b110) ||
+                             (Funct3 == 3'b101)
+                         ));
+assign if_dec_aluop[1] = dec_i_ori ||
+                         (dec_is_rtype && ((Funct3 == 3'b111) || (Funct3 == 3'b110)));
+assign if_dec_aluop[2] = dec_is_rtype &&
+                         Funct3[2] &&
+                         !Funct3[1] &&
+                         (!Funct3[0] || Funct7[5]);
+assign if_dec_aluop[3] = dec_is_rtype &&
+                         !Funct3[1] &&
+                         Funct3[0] &&
+                         (!Funct3[2] || !Funct7[5]);
 
 /* ******************************** Outputs ******************************** */
 
@@ -162,8 +242,10 @@ always @(*) begin
 
     stall           = IF_stall;
     branch          = EX_branch;
-    PC_NPC          = EX_branch ? NPC_NPC + 4 : IF_stall ? IF_PCA4 : NPC_NPC;
-    NPC_PC          = EX_branch ? EX_PC : PC;
+    PC_NPC          = EX_branch ? NPC_taken_p4 : IF_stall ? IF_PCA4 : NPC_NPC;
+    // Drive the EX-stage base PC directly so branch only acts as a final select,
+    // not as a control input to the NPC adder cone.
+    NPC_PC          = EX_PC;
     FETCH_PC        = IM_PC;
     NPC_EX_Offset20 = EX_Offset20;
     NPC_EX_Offset12 = EX_Offset;
@@ -190,105 +272,17 @@ assign NPC_NPC = NPC;
 
 // decode
 always @(*) begin
-    // Safe defaults: sequential fetch, no write-back side effects.
     IF_PCWrite  = 1'b1;
     IF_InsMemRW = 1'b1;
     IF_IRWrite  = 1'b1;
-    IF_RFWrite  = 1'b0;
-    IF_DMCtrl   = `DMCtrl_RD;
+    IF_RFWrite  = if_dec_rfwrite;
+    IF_DMCtrl   = if_dec_dmctrl;
     IF_ExtSel   = `ExtSel_SIGNED;
     IF_ALUSrcA  = `ALUSrcA_A;
-    IF_ALUSrcB  = `ALUSrcB_B;
+    IF_ALUSrcB  = if_dec_alusrcb;
     IF_RegSel   = `RegSel_rd;
-    IF_WDSel    = `WDSel_FromALU;
-    IF_ALUOp    = `ALUOp_ADD;
-
-    case (opcode)
-        // R-type (8): add/sub/and/or/xor/sll/srl/sra
-        `INSTR_RTYPE_OP: begin
-            IF_RFWrite = 1'b1;
-            case ({Funct7, Funct3})
-                `INSTR_ADD_FUNCT: IF_ALUOp = `ALUOp_ADD; // add
-                `INSTR_SUB_FUNCT: IF_ALUOp = `ALUOp_SUB; // sub
-                `INSTR_AND_FUNCT: IF_ALUOp = `ALUOp_AND; // and
-                `INSTR_OR_FUNCT : IF_ALUOp = `ALUOp_OR;  // or
-                `INSTR_XOR_FUNCT: IF_ALUOp = `ALUOp_XOR; // xor
-                `INSTR_SLL_FUNCT: IF_ALUOp = `ALUOp_SLL; // sll
-                `INSTR_SRL_FUNCT: IF_ALUOp = `ALUOp_SRL; // srl
-                `INSTR_SRA_FUNCT: IF_ALUOp = `ALUOp_SRA; // sra
-                default: begin
-                    RFWrite = 1'b0;
-                    ALUOp   = `ALUOp_ADD;
-                end
-            endcase
-        end
-
-        // I-type ALU immediate (2): addi/ori
-        `INSTR_ITYPE_OP: begin
-            IF_RFWrite = 1'b1;
-            IF_ALUSrcB = `ALUSrcB_Imm;
-            case (Funct3)
-                `INSTR_ADDI_FUNCT: begin
-                    // addi
-                    IF_ExtSel = `ExtSel_SIGNED;
-                    IF_ALUOp  = `ALUOp_ADD;
-                end
-                `INSTR_ORI_FUNCT: begin
-                    // ori
-                    IF_ExtSel = `ExtSel_SIGNED;
-                    IF_ALUOp  = `ALUOp_OR;
-                end
-                default: begin
-                    IF_RFWrite = 1'b0;
-                end
-            endcase
-        end
-
-        // lw
-        `INSTR_LW_OP: begin
-            IF_RFWrite = 1'b1;
-            IF_ExtSel  = `ExtSel_SIGNED;
-            IF_ALUSrcB = `ALUSrcB_Offset;
-            IF_ALUOp   = `ALUOp_ADD;
-            IF_DMCtrl  = `DMCtrl_RD;
-            IF_WDSel   = `WDSel_FromMEM;
-        end
-
-        // sw
-        `INSTR_SW_OP: begin
-            IF_RFWrite = 1'b0;
-            IF_ExtSel  = `ExtSel_SIGNED;
-            IF_ALUSrcB = `ALUSrcB_Offset;
-            IF_ALUOp   = `ALUOp_ADD;
-            IF_DMCtrl  = `DMCtrl_WR;
-        end
-
-        // B-type (2): beq/bne
-        `INSTR_BTYPE_OP: begin
-            IF_RFWrite = 1'b0;
-            IF_ALUSrcB = `ALUSrcB_B;
-            IF_ALUOp   = `ALUOp_SUB;
-        end
-
-        // jal
-        `INSTR_JAL_OP: begin
-            IF_RFWrite = 1'b1;
-            IF_WDSel   = `WDSel_FromPC;
-        end
-
-        // jalr
-        `INSTR_JALR_OP: begin
-            IF_RFWrite = 1'b1;
-            IF_ExtSel  = `ExtSel_SIGNED;
-            IF_ALUSrcB = `ALUSrcB_Imm;
-            IF_ALUOp   = `ALUOp_ADD;
-            IF_WDSel   = `WDSel_FromPC;
-        end
-
-        default: begin
-            // Keep defaults.
-        end
-    endcase
+    IF_WDSel    = if_dec_wdsel;
+    IF_ALUOp    = if_dec_aluop;
 end
 
 // Hazard detect in ID using only registered instruction fields.
@@ -344,30 +338,16 @@ Flopr #(.WIDTH(3)) U_IFID_Funct3 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 3'
 
 
 always @(*) begin
-    case (ID_opcode)
-        `INSTR_BTYPE_OP: begin
-            case (ID_Funct3)
-                `INSTR_BEQ_FUNCT: ID_NPCOp = ID_zero ? `NPC_Offset12 : `NPC_PC; // beq
-                `INSTR_BNE_FUNCT: ID_NPCOp = ID_zero ? `NPC_PC : `NPC_Offset12; // bne
-                default: ID_NPCOp = `NPC_PC;
-            endcase
-        end
-
-        // jal
-        `INSTR_JAL_OP: begin
-            ID_NPCOp   = `NPC_Offset20;
-        end
-
-        // jalr
-        `INSTR_JALR_OP: begin
-            ID_NPCOp   = `NPC_rs;
-        end
-
-        default: begin
-            ID_NPCOp = `NPC_PC;
-        end
-    endcase
-
+    ID_NPCOp = `NPC_PC;
+    if (id_take_branch) begin
+        ID_NPCOp = `NPC_Offset12;
+    end
+    else if (ID_opcode == `INSTR_JAL_OP) begin
+        ID_NPCOp = `NPC_Offset20;
+    end
+    else if (ID_opcode == `INSTR_JALR_OP) begin
+        ID_NPCOp = `NPC_rs;
+    end
 end
 
 always @(*) begin
@@ -395,7 +375,7 @@ assign MEM_DMReadStall = MEM_RFWrite == 1'b1 && MEM_WDSel == `WDSel_FromMEM;
 
 Flopr #(.WIDTH(1))  U_IF_done (.clk(clk), .rst(rst), .in_data(1'b1), .out_data(IF_done));
 Flopr #(.WIDTH(32)) U_IF_PC   (.clk(clk), .rst(rst), .in_data(IF_stall ? IF_PC : (EX_branch ? IM_PC : PC))  , .out_data(IF_PC)  );
-Flopr #(.WIDTH(32)) U_IF_PCA4 (.clk(clk), .rst(rst), .in_data(IF_stall ? IF_PCA4 : (EX_branch ? NPC_NPC+4 : PCA4)), .out_data(IF_PCA4));
+Flopr #(.WIDTH(32)) U_IF_PCA4 (.clk(clk), .rst(rst), .in_data(IF_stall ? IF_PCA4 : (EX_branch ? NPC_taken_p4 : PCA4)), .out_data(IF_PCA4));
 
 /* IF -> ID */
 
