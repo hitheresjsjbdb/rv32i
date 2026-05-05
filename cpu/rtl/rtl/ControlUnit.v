@@ -47,9 +47,9 @@ module ControlUnit(
     output reg branch,
     output reg [31:0] PC_NPC,
     output reg [31:0] NPC_PC,
+    output reg [31:0] FETCH_PC,
     output reg [19:0] NPC_EX_Offset20,
     output reg [11:0] NPC_EX_Offset12,
-    output reg [9:0] IM_addr,
     output reg [4:0] MUX_WB_rd,
     output reg [11:0] EXT_ID_Imm12,
     output reg forward1,
@@ -132,6 +132,17 @@ wire [31:0] WB_WD;
 wire [4:0]  WB_rd;
 wire        WB_RFWrite;
 wire        WB_done;
+wire        ID_use_rs1;
+wire        ID_use_rs2;
+wire        ID_dep_EX;
+wire        ID_dep_MEM;
+wire        ID_dep_MEMSTALL;
+wire        load_pipe_busy;
+wire        pipe_flush;
+wire [31:0] ID_Imm32_local;
+wire [31:0] ID_Offset32_local;
+reg  [31:0] ID_ALU_B_sel;
+wire [31:0] EX_ALU_B_sel;
 
 /* ******************************** Outputs ******************************** */
 
@@ -151,6 +162,9 @@ always @(*) begin
 
     stall           = IF_stall;
     branch          = EX_branch;
+    PC_NPC          = EX_branch ? NPC_NPC + 4 : IF_stall ? IF_PCA4 : NPC_NPC;
+    NPC_PC          = EX_branch ? EX_PC : PC;
+    FETCH_PC        = IM_PC;
     NPC_EX_Offset20 = EX_Offset20;
     NPC_EX_Offset12 = EX_Offset;
     MUX_WB_rd       = WB_rd;
@@ -159,7 +173,7 @@ always @(*) begin
     forward2        = (WBID_forward2 || MEMID_forward2);
     FD1             = ID_RD1;
     FD2             = ID_RD2;
-    ALU_B_Imm       = EX_Imm32;
+    ALU_B_Imm       = EX_ALU_B_sel;
     RF_WD           = WB_WD;
     MUX_PCA4        = MEM_PCA4;
     DM_WD           = MEM_WD;
@@ -277,20 +291,33 @@ always @(*) begin
     endcase
 end
 
-// hazard detect (generate bubbles -> pipeline stalling)
-assign IF_stall = (EX_branch != 1'b1) &&
-                (((rs1 == EX_rd || rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_rd != 5'b0 && EX_WDSel == `WDSel_FromMEM) ||
-                 (ID_WDSel == `WDSel_FromMEM && ID_RFWrite == 1'b1) ||  // lw hazard
-                 ((rs1 == MEM_rd || rs2 == MEM_rd) && MEM_DMReadStall == 1'b1) ||
-                 ((rs1 == ID_rd || rs2 == ID_rd) && ID_RFWrite == 1'b1 && ID_rd != 5'b0));
-
-always @(*) begin
-    PC_NPC  = EX_branch ? NPC_NPC + 4 : IF_stall ? IF_PCA4 : NPC_NPC;
-    NPC_PC  = EX_branch ? EX_PC : PC;
-    IM_addr = IM_PC[11:2];
-end
+// Hazard detect in ID using only registered instruction fields.
+// This keeps the raw IM output out of the fetch-address feedback loop.
+assign pipe_flush = EX_branch;
+assign ID_use_rs1 = (ID_opcode == `INSTR_RTYPE_OP) ||
+                    (ID_opcode == `INSTR_ITYPE_OP) ||
+                    (ID_opcode == `INSTR_LW_OP)    ||
+                    (ID_opcode == `INSTR_SW_OP)    ||
+                    (ID_opcode == `INSTR_BTYPE_OP) ||
+                    (ID_opcode == `INSTR_JALR_OP);
+assign ID_use_rs2 = (ID_opcode == `INSTR_RTYPE_OP) ||
+                    (ID_opcode == `INSTR_SW_OP)    ||
+                    (ID_opcode == `INSTR_BTYPE_OP);
+assign ID_dep_EX  = (((ID_use_rs1 && (ID_rs1 == EX_rd)) || (ID_use_rs2 && (ID_rs2 == EX_rd))) &&
+                     (EX_RFWrite == 1'b1) && (EX_rd != 5'b0));
+assign ID_dep_MEM = (((ID_use_rs1 && (ID_rs1 == MEM_rd)) || (ID_use_rs2 && (ID_rs2 == MEM_rd))) &&
+                     (MEM_DMReadStall == 1'b1) && (MEM_rd != 5'b0));
+assign ID_dep_MEMSTALL = (((ID_use_rs1 && (ID_rs1 == MEMStall_rd)) || (ID_use_rs2 && (ID_rs2 == MEMStall_rd))) &&
+                          (MEMStall_stall == 1'b1) && (MEMStall_rd != 5'b0));
+assign load_pipe_busy = ((EX_RFWrite == 1'b1) && (EX_WDSel == `WDSel_FromMEM)) ||
+                        (MEM_DMReadStall == 1'b1) ||
+                        (MEMStall_stall == 1'b1);
+assign IF_stall   = (pipe_flush != 1'b1) && (load_pipe_busy || ID_dep_EX || ID_dep_MEM || ID_dep_MEMSTALL);
 
 assign IM_PC   = EX_branch ? NPC_NPC : IF_stall ? IF_PC : PC;
+
+assign ID_Imm32_local    = {{20{ID_Imm12[11]}}, ID_Imm12};
+assign ID_Offset32_local = {{20{ID_Offset[11]}}, ID_Offset};
 
 
 
@@ -312,8 +339,8 @@ assign ID_RD2 = (MEMID_forward2 ? ALU_result_r : (WBID_forward2 ? WB_WD : 32'h0)
 
 assign ID_zero = (RD1 == RD2);
 
-Flopr #(.WIDTH(7)) U_IFID_opcode (.clk(clk), .rst(rst), .in_data((IF_stall || EX_branch) ? 7'b0 : opcode), .out_data(ID_opcode));
-Flopr #(.WIDTH(3)) U_IFID_Funct3 (.clk(clk), .rst(rst), .in_data(Funct3), .out_data(ID_Funct3));
+Flopr #(.WIDTH(7)) U_IFID_opcode (.clk(clk), .rst(rst), .in_data(pipe_flush ? 7'b0 : (IF_stall ? ID_opcode : opcode)), .out_data(ID_opcode));
+Flopr #(.WIDTH(3)) U_IFID_Funct3 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 3'b0 : (IF_stall ? ID_Funct3 : Funct3)), .out_data(ID_Funct3));
 
 
 always @(*) begin
@@ -343,8 +370,17 @@ always @(*) begin
 
 end
 
-Flopr #(.WIDTH(1)) U_branch (.clk(clk), .rst(rst), .in_data(EX_branch ? 1'b0 : ID_NPCOp != `NPC_PC), .out_data(EX_branch));
-Flopr #(.WIDTH(2)) U_NPCOp (.clk(clk), .rst(rst), .in_data(EX_branch ? `NPC_PC : ID_NPCOp), .out_data(EX_NPCOp));
+always @(*) begin
+    case (ID_ALUSrcB)
+        `ALUSrcB_B     : ID_ALU_B_sel = RD2;
+        `ALUSrcB_Imm   : ID_ALU_B_sel = ID_Imm32_local;
+        `ALUSrcB_Offset: ID_ALU_B_sel = ID_Offset32_local;
+        default        : ID_ALU_B_sel = RD2;
+    endcase
+end
+
+Flopr #(.WIDTH(1)) U_branch (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 1'b0 : (ID_NPCOp != `NPC_PC)), .out_data(EX_branch));
+Flopr #(.WIDTH(2)) U_NPCOp (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? `NPC_PC : ID_NPCOp), .out_data(EX_NPCOp));
 
 /* ################################ EX ################################ */
 
@@ -363,55 +399,56 @@ Flopr #(.WIDTH(32)) U_IF_PCA4 (.clk(clk), .rst(rst), .in_data(IF_stall ? IF_PCA4
 
 /* IF -> ID */
 
-Flopr #(.WIDTH(32))  U_IFID_PCA4 (.clk(clk), .rst(rst), .in_data(IF_PCA4), .out_data(ID_PCA4));
-Flopr #(.WIDTH(32))  U_IFID_PC   (.clk(clk), .rst(rst), .in_data(IF_PC) , .out_data(ID_PC)  );
+Flopr #(.WIDTH(32))  U_IFID_PCA4 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 32'b0 : (IF_stall ? ID_PCA4 : IF_PCA4)), .out_data(ID_PCA4));
+Flopr #(.WIDTH(32))  U_IFID_PC   (.clk(clk), .rst(rst), .in_data(pipe_flush ? 32'b0 : (IF_stall ? ID_PC   : IF_PC  )), .out_data(ID_PC)  );
 
-Flopr #(.WIDTH(12))  U_IFID_Imm12 (.clk(clk), .rst(rst), .in_data(Imm12) , .out_data(ID_Imm12) );
-Flopr #(.WIDTH(12))  U_IFID_Offet (.clk(clk), .rst(rst), .in_data(Offset), .out_data(ID_Offset));
+Flopr #(.WIDTH(12))  U_IFID_Imm12 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 12'b0 : (IF_stall ? ID_Imm12 : Imm12 )), .out_data(ID_Imm12) );
+Flopr #(.WIDTH(12))  U_IFID_Offet (.clk(clk), .rst(rst), .in_data(pipe_flush ? 12'b0 : (IF_stall ? ID_Offset : Offset)), .out_data(ID_Offset));
 
-Flopr #(.WIDTH(5) )  U_IFID_rs1 (.clk(clk), .rst(rst), .in_data(rs1), .out_data(ID_rs1));
-Flopr #(.WIDTH(5) )  U_IFID_rs2 (.clk(clk), .rst(rst), .in_data(rs2), .out_data(ID_rs2));
-Flopr #(.WIDTH(5) )  U_IFID_rd  (.clk(clk), .rst(rst), .in_data(rd) , .out_data(ID_rd) );
+Flopr #(.WIDTH(5) )  U_IFID_rs1 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 5'b0 : (IF_stall ? ID_rs1 : rs1)), .out_data(ID_rs1));
+Flopr #(.WIDTH(5) )  U_IFID_rs2 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 5'b0 : (IF_stall ? ID_rs2 : rs2)), .out_data(ID_rs2));
+Flopr #(.WIDTH(5) )  U_IFID_rd  (.clk(clk), .rst(rst), .in_data(pipe_flush ? 5'b0 : (IF_stall ? ID_rd  : rd )), .out_data(ID_rd) );
 
-Flopr #(.WIDTH(4) )  U_IFID_ALUOp (.clk(clk), .rst(rst), .in_data(IF_ALUOp), .out_data(ID_ALUOp));
+Flopr #(.WIDTH(4) )  U_IFID_ALUOp (.clk(clk), .rst(rst), .in_data(pipe_flush ? 4'b0 : (IF_stall ? ID_ALUOp : IF_ALUOp)), .out_data(ID_ALUOp));
 
-Flopr #(.WIDTH(2) )  U_IFID_Regsel  (.clk(clk), .rst(rst), .in_data(IF_RegSel) , .out_data(ID_Regsel) );
-Flopr #(.WIDTH(2) )  U_IFID_ALUSrcB (.clk(clk), .rst(rst), .in_data(IF_ALUSrcB), .out_data(ID_ALUSrcB));
-Flopr #(.WIDTH(2) )  U_IFID_WDSel   (.clk(clk), .rst(rst), .in_data(IF_WDSel)  , .out_data(ID_WDSel)  );
+Flopr #(.WIDTH(2) )  U_IFID_Regsel  (.clk(clk), .rst(rst), .in_data(pipe_flush ? 2'b0 : (IF_stall ? ID_Regsel  : IF_RegSel )), .out_data(ID_Regsel) );
+Flopr #(.WIDTH(2) )  U_IFID_ALUSrcB (.clk(clk), .rst(rst), .in_data(pipe_flush ? 2'b0 : (IF_stall ? ID_ALUSrcB : IF_ALUSrcB)), .out_data(ID_ALUSrcB));
+Flopr #(.WIDTH(2) )  U_IFID_WDSel   (.clk(clk), .rst(rst), .in_data(pipe_flush ? 2'b0 : (IF_stall ? ID_WDSel   : IF_WDSel  )), .out_data(ID_WDSel)  );
 
-Flopr #(.WIDTH(1) )  U_IFID_ALUSrcA (.clk(clk), .rst(rst), .in_data(IF_ALUSrcA), .out_data(ID_ALUSrcA));
-Flopr #(.WIDTH(1) )  U_IFID_RFWrite (.clk(clk), .rst(rst), .in_data(IF_stall || EX_branch ? 1'b0 : IF_RFWrite), .out_data(ID_RFWrite));
-Flopr #(.WIDTH(1) )  U_IFID_DMCtrl  (.clk(clk), .rst(rst), .in_data(IF_stall || EX_branch ? 1'b0 : IF_DMCtrl) , .out_data(ID_DMCtrl) );
+Flopr #(.WIDTH(1) )  U_IFID_ALUSrcA (.clk(clk), .rst(rst), .in_data(pipe_flush ? 1'b0 : (IF_stall ? ID_ALUSrcA : IF_ALUSrcA)), .out_data(ID_ALUSrcA));
+Flopr #(.WIDTH(1) )  U_IFID_RFWrite (.clk(clk), .rst(rst), .in_data(pipe_flush ? 1'b0 : (IF_stall ? ID_RFWrite : IF_RFWrite)), .out_data(ID_RFWrite));
+Flopr #(.WIDTH(1) )  U_IFID_DMCtrl  (.clk(clk), .rst(rst), .in_data(pipe_flush ? 1'b0 : (IF_stall ? ID_DMCtrl  : IF_DMCtrl )), .out_data(ID_DMCtrl) );
 
-Flopr #(.WIDTH(1) )  U_IFID_done (.clk(clk), .rst(rst), .in_data(IF_stall || EX_branch ? 1'b0 : IF_done), .out_data(ID_done));
+Flopr #(.WIDTH(1) )  U_IFID_done (.clk(clk), .rst(rst), .in_data(pipe_flush ? 1'b0 : (IF_stall ? ID_done : IF_done)), .out_data(ID_done));
 
 // NPC
-Flopr #(.WIDTH(12))  U_IFID_Offset12 (.clk(clk), .rst(rst), .in_data(Offset), .out_data(ID_Offset12));
-Flopr #(.WIDTH(20))  U_IFID_Offset20 (.clk(clk), .rst(rst), .in_data(Offset20), .out_data(ID_Offset20));
+Flopr #(.WIDTH(12))  U_IFID_Offset12 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 12'b0 : (IF_stall ? ID_Offset12 : Offset)), .out_data(ID_Offset12));
+Flopr #(.WIDTH(20))  U_IFID_Offset20 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 20'b0 : (IF_stall ? ID_Offset20 : Offset20)), .out_data(ID_Offset20));
 
 /* ID -> EX */
 
-Flopr #(.WIDTH(32))  U_IDEX_Imm32 (.clk(clk), .rst(rst), .in_data(Imm32)  , .out_data(EX_Imm32));
-Flopr #(.WIDTH(32))  U_IDEX_PCA4  (.clk(clk), .rst(rst), .in_data(ID_PCA4), .out_data(EX_PCA4) );
-Flopr #(.WIDTH(32))  U_IDEX_PC    (.clk(clk), .rst(rst), .in_data(ID_PC)  , .out_data(EX_PC)   );
+Flopr #(.WIDTH(32))  U_IDEX_Imm32 (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : Imm32)  , .out_data(EX_Imm32));
+Flopr #(.WIDTH(32))  U_IDEX_PCA4  (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : ID_PCA4), .out_data(EX_PCA4) );
+Flopr #(.WIDTH(32))  U_IDEX_PC    (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : ID_PC)  , .out_data(EX_PC)   );
+Flopr #(.WIDTH(32))  U_IDEX_ALU_B (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : ID_ALU_B_sel), .out_data(EX_ALU_B_sel));
 
-Flopr #(.WIDTH(12))  U_IDEX_Offset (.clk(clk), .rst(rst), .in_data(ID_Offset), .out_data(EX_Offset));
+Flopr #(.WIDTH(12))  U_IDEX_Offset (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 12'b0 : ID_Offset), .out_data(EX_Offset));
 
-Flopr #(.WIDTH(5) )  U_IDEX_rd (.clk(clk), .rst(rst), .in_data(ID_rd), .out_data(EX_rd));
+Flopr #(.WIDTH(5) )  U_IDEX_rd (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 5'b0 : ID_rd), .out_data(EX_rd));
 
-Flopr #(.WIDTH(4) )  U_IDEX_ALUOp (.clk(clk), .rst(rst), .in_data(ID_ALUOp), .out_data(EX_ALUOp));
+Flopr #(.WIDTH(4) )  U_IDEX_ALUOp (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 4'b0 : ID_ALUOp), .out_data(EX_ALUOp));
 
-Flopr #(.WIDTH(2) )  U_IDEX_Regsel  (.clk(clk), .rst(rst), .in_data(ID_Regsel) , .out_data(EX_Regsel) );
-Flopr #(.WIDTH(2) )  U_IDEX_ALUSrcB (.clk(clk), .rst(rst), .in_data(ID_ALUSrcB), .out_data(EX_ALUSrcB));
-Flopr #(.WIDTH(2) )  U_IDEX_WDSel   (.clk(clk), .rst(rst), .in_data(ID_WDSel)  , .out_data(EX_WDSel)  );
+Flopr #(.WIDTH(2) )  U_IDEX_Regsel  (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 2'b0 : ID_Regsel) , .out_data(EX_Regsel) );
+Flopr #(.WIDTH(2) )  U_IDEX_ALUSrcB (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 2'b0 : ID_ALUSrcB), .out_data(EX_ALUSrcB));
+Flopr #(.WIDTH(2) )  U_IDEX_WDSel   (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 2'b0 : ID_WDSel)  , .out_data(EX_WDSel)  );
 
-Flopr #(.WIDTH(1) )  U_IDEX_ALUSrcA (.clk(clk), .rst(rst), .in_data(ID_ALUSrcA), .out_data(EX_ALUSrcA));
-Flopr #(.WIDTH(1) )  U_IDEX_RFWrite (.clk(clk), .rst(rst), .in_data(EX_branch ? 1'b0 : ID_RFWrite), .out_data(EX_RFWrite));
-Flopr #(.WIDTH(1) )  U_IDEX_DMCtrl  (.clk(clk), .rst(rst), .in_data(EX_branch ? 1'b0 : ID_DMCtrl) , .out_data(EX_DMCtrl) );
+Flopr #(.WIDTH(1) )  U_IDEX_ALUSrcA (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 1'b0 : ID_ALUSrcA), .out_data(EX_ALUSrcA));
+Flopr #(.WIDTH(1) )  U_IDEX_RFWrite (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 1'b0 : ID_RFWrite), .out_data(EX_RFWrite));
+Flopr #(.WIDTH(1) )  U_IDEX_DMCtrl  (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 1'b0 : ID_DMCtrl) , .out_data(EX_DMCtrl) );
 
-Flopr #(.WIDTH(20))  U_IDEX_Offset20 (.clk(clk), .rst(rst), .in_data(ID_Offset20), .out_data(EX_Offset20));
+Flopr #(.WIDTH(20))  U_IDEX_Offset20 (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 20'b0 : ID_Offset20), .out_data(EX_Offset20));
 
-Flopr #(.WIDTH(1) )  U_IDEX_done (.clk(clk), .rst(rst), .in_data(EX_branch ? 1'b0 : ID_done), .out_data(EX_done));
+Flopr #(.WIDTH(1) )  U_IDEX_done (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 1'b0 : ID_done), .out_data(EX_done));
 
 /* EX -> MEM */
 
@@ -450,8 +487,8 @@ Flopr #(.WIDTH(1) ) U_MEMstall_stall   (.clk(clk), .rst(rst), .in_data(MEM_DMRea
 
 wire [31:0] ID_dnpc, EX_dnpc, MEM_dnpc, MEMStall_dnpc, WB_dnpc, dnpc;
 
-Flopr #(.WIDTH(32)) U_IFID_dnpc     (.clk(clk), .rst(rst), .in_data(IF_PCA4)                                  , .out_data(ID_dnpc)      );
-Flopr #(.WIDTH(32)) U_IDEX_dnpc     (.clk(clk), .rst(rst), .in_data(ID_dnpc)                                  , .out_data(EX_dnpc)      );
+Flopr #(.WIDTH(32)) U_IFID_dnpc     (.clk(clk), .rst(rst), .in_data(pipe_flush ? 32'b0 : (IF_stall ? ID_dnpc : IF_PCA4)), .out_data(ID_dnpc)      );
+Flopr #(.WIDTH(32)) U_IDEX_dnpc     (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : ID_dnpc)         , .out_data(EX_dnpc)      );
 Flopr #(.WIDTH(32)) U_EXMEM_dnpc    (.clk(clk), .rst(rst), .in_data(EX_branch ? NPC_NPC : EX_dnpc)            , .out_data(MEM_dnpc)     );
 Flopr #(.WIDTH(32)) U_MEMstall_dnpc (.clk(clk), .rst(rst), .in_data(MEM_dnpc)                                 , .out_data(MEMStall_dnpc));
 Flopr #(.WIDTH(32)) U_MEMWB_dnpc    (.clk(clk), .rst(rst), .in_data(MEMStall_stall ? MEMStall_dnpc : MEM_dnpc), .out_data(WB_dnpc)      );

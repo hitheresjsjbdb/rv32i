@@ -54,6 +54,7 @@ wire [31:0] A, B, ALU_result, ALU_result_r;
 wire stall;
 wire branch;
 wire [31:0] PC_NPC, NPC_PC;
+wire [31:0] FETCH_PC;
 wire [19:0] NPC_EX_Offset20;
 wire [11:0] NPC_EX_Offset12;
 wire [9:0]  IM_addr;
@@ -77,6 +78,7 @@ assign Imm12   = out_ins[31:20];
 assign Offset20 = {out_ins[31],out_ins[19:12],out_ins[20],out_ins[30:21]};
 assign Offset  = (opcode == `INSTR_BTYPE_OP) ? {out_ins[31],out_ins[7],out_ins[30:25],out_ins[11:8]} :
                  (opcode == `INSTR_SW_OP)  ? {out_ins[31:25],out_ins[11:7]} : Imm12;
+assign IM_addr = FETCH_PC[11:2];
 
 // ÊuÀý»- ControlUnit
 ControlUnit U_ControlUnit(
@@ -107,12 +109,10 @@ ControlUnit U_ControlUnit(
     /* new outputs */
     // control signals
     .stall(stall), .branch(branch),
-    // to PC
-    .PC_NPC(PC_NPC),
+    // to fetch control
+    .PC_NPC(PC_NPC), .NPC_PC(NPC_PC), .FETCH_PC(FETCH_PC),
     // to NPC
-    .NPC_PC(NPC_PC), .NPC_EX_Offset12(NPC_EX_Offset12), .NPC_EX_Offset20(NPC_EX_Offset20),
-    // to IM
-    .IM_addr(IM_addr),
+    .NPC_EX_Offset12(NPC_EX_Offset12), .NPC_EX_Offset20(NPC_EX_Offset20),
     // to EXT
     .EXT_ID_Imm12(EXT_Imm12),
     // to MUX_3to1

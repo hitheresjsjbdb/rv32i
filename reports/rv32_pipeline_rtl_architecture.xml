@@ -1,0 +1,595 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rv32PipelineArchitecture version="1.0" generatedOn="2026-04-29" kind="descriptive-architecture-xml">
+  <metadata>
+    <projectName>rv32_pipeline</projectName>
+    <topModule name="riscv" source="cpu/rtl/rtl/riscv.v:23-193"/>
+    <intent>Reconcile the hand-drawn IF/ID/EX/MEM/WB sketch with the current RTL implementation.</intent>
+    <clock name="clk" activeEdge="posedge"/>
+    <reset name="rst" activeLevel="high" type="asynchronous"/>
+    <completionSignal name="done" stage="WB"/>
+    <addressing>
+      <instructionBaseAddress>0x00002000</instructionBaseAddress>
+      <instructionMemoryWords>1024</instructionMemoryWords>
+      <dataMemoryWords>1024</dataMemoryWords>
+      <wordSizeBits>32</wordSizeBits>
+    </addressing>
+    <summary>
+      <item>This core is an in-order, single-issue, five-stage RV32I-subset pipeline.</item>
+      <item>The implementation centralizes many pipeline registers, forwarding paths, and stall controls inside ControlUnit.</item>
+      <item>The hand-drawn diagram matches the high-level stage partition, but several implementation details live in ControlUnit rather than as separate visible blocks.</item>
+    </summary>
+  </metadata>
+
+  <sourceFiles>
+    <file path="cpu/rtl/rtl/riscv.v" role="top-level integration"/>
+    <file path="cpu/rtl/rtl/ControlUnit.v" role="decode, hazard, forwarding, pipeline register bank, writeback bookkeeping"/>
+    <file path="cpu/rtl/rtl/PC.v" role="architectural PC and IF-side shadow registers"/>
+    <file path="cpu/rtl/rtl/NPC.v" role="next-PC generation"/>
+    <file path="cpu/rtl/rtl/IM.v" role="instruction fetch memory via DPI"/>
+    <file path="cpu/rtl/rtl/IR.v" role="instruction gate"/>
+    <file path="cpu/rtl/rtl/RF.v" role="register file"/>
+    <file path="cpu/rtl/rtl/EXT.v" role="immediate extension"/>
+    <file path="cpu/rtl/rtl/MUX_2to1_A.v" role="ALU A-input select"/>
+    <file path="cpu/rtl/rtl/MUX_3to1_B.v" role="ALU B-input select"/>
+    <file path="cpu/rtl/rtl/ALU.v" role="execute datapath"/>
+    <file path="cpu/rtl/rtl/Flopr.v" role="generic pipeline register"/>
+    <file path="cpu/rtl/rtl/MUX_3to1.v" role="destination register select"/>
+    <file path="cpu/rtl/rtl/MUX_3to1_LMD.v" role="writeback data select with load stall override"/>
+    <file path="cpu/rtl/rtl/DM.v" role="data memory"/>
+    <file path="cpu/rtl/includes/ctrl_signal_def.v" role="control encoding definitions"/>
+    <file path="cpu/rtl/includes/instruction_def.v" role="instruction opcode and funct definitions"/>
+    <file path="cpu/rtl/includes/global_def.v" role="global switches including difftest define"/>
+  </sourceFiles>
+
+  <instructionSubset>
+    <supported>
+      <instruction mnemonic="add" format="R" opcode="0110011" funct="0000000_000"/>
+      <instruction mnemonic="sub" format="R" opcode="0110011" funct="0100000_000"/>
+      <instruction mnemonic="and" format="R" opcode="0110011" funct="0000000_111"/>
+      <instruction mnemonic="or" format="R" opcode="0110011" funct="0000000_110"/>
+      <instruction mnemonic="xor" format="R" opcode="0110011" funct="0000000_100"/>
+      <instruction mnemonic="sll" format="R" opcode="0110011" funct="0000000_001"/>
+      <instruction mnemonic="srl" format="R" opcode="0110011" funct="0000000_101"/>
+      <instruction mnemonic="sra" format="R" opcode="0110011" funct="0100000_101"/>
+      <instruction mnemonic="addi" format="I" opcode="0010011" funct3="000"/>
+      <instruction mnemonic="ori" format="I" opcode="0010011" funct3="110"/>
+      <instruction mnemonic="lw" format="I" opcode="0000011"/>
+      <instruction mnemonic="sw" format="S" opcode="0100011"/>
+      <instruction mnemonic="beq" format="B" opcode="1100011" funct3="000"/>
+      <instruction mnemonic="bne" format="B" opcode="1100011" funct3="001"/>
+      <instruction mnemonic="jal" format="J" opcode="1101111"/>
+      <instruction mnemonic="jalr" format="I" opcode="1100111"/>
+    </supported>
+    <notImplemented>
+      <item>lui, auipc, slt, sltu, slti, andi, xori, immediate shifts, byte and halfword loads and stores, fences, system and CSR instructions.</item>
+      <item>No exception, interrupt, privilege, CSR, or cache logic is present in the RTL shown here.</item>
+    </notImplemented>
+  </instructionSubset>
+
+  <controlEncodings source="cpu/rtl/includes/ctrl_signal_def.v:1-52">
+    <encoding name="NPCOp" width="2">
+      <value bits="00" symbol="NPC_PC" meaning="PC plus 4"/>
+      <value bits="01" symbol="NPC_Offset12" meaning="branch target PC plus sign-extended 12-bit offset with low zero"/>
+      <value bits="10" symbol="NPC_rs" meaning="jalr target based on rs plus immediate, aligned to even address"/>
+      <value bits="11" symbol="NPC_Offset20" meaning="jal target PC plus sign-extended 20-bit offset with low zero"/>
+    </encoding>
+    <encoding name="ALUSrcA" width="1">
+      <value bits="0" symbol="ALUSrcA_A" meaning="use RD1_r"/>
+      <value bits="1" symbol="ALUSrcA_sa" meaning="use the alternate 5-bit value on U_MUX_2to1_A, currently hard-wired to 5'h0"/>
+    </encoding>
+    <encoding name="ALUSrcB" width="2">
+      <value bits="00" symbol="ALUSrcB_B" meaning="use RD2_r"/>
+      <value bits="01" symbol="ALUSrcB_Imm" meaning="use EX_Imm32"/>
+      <value bits="10" symbol="ALUSrcB_Offset" meaning="use sign-extended EX_Offset"/>
+      <value bits="11" symbol="ALUSrcB_else" meaning="fallback path, currently equivalent to X in the module"/>
+    </encoding>
+    <encoding name="ExtSel" width="1">
+      <value bits="0" symbol="ExtSel_ZERO" meaning="zero extension"/>
+      <value bits="1" symbol="ExtSel_SIGNED" meaning="sign extension"/>
+    </encoding>
+    <encoding name="ALUOp" width="4">
+      <value bits="0000" symbol="ALUOp_ADD" meaning="addition"/>
+      <value bits="0001" symbol="ALUOp_SUB" meaning="subtraction"/>
+      <value bits="0010" symbol="ALUOp_AND" meaning="bitwise and"/>
+      <value bits="0011" symbol="ALUOp_OR" meaning="bitwise or"/>
+      <value bits="0100" symbol="ALUOp_XOR" meaning="bitwise xor"/>
+      <value bits="0101" symbol="ALUOp_SRA" meaning="arithmetic right shift"/>
+      <value bits="1000" symbol="ALUOp_SLL" meaning="logical left shift"/>
+      <value bits="1001" symbol="ALUOp_SRL" meaning="logical right shift"/>
+      <value bits="1010" symbol="ALUOp_BR" meaning="defined in macros but not used in current decode"/>
+    </encoding>
+    <encoding name="RegSel" width="2">
+      <value bits="00" symbol="RegSel_rd" meaning="destination register is rd"/>
+      <value bits="01" symbol="RegSel_rt" meaning="destination register is rt style field, not used in current top-level wiring"/>
+      <value bits="10" symbol="RegSel_31" meaning="destination register is x31, not used in current top-level wiring"/>
+      <value bits="11" symbol="RegSel_else" meaning="fallback zero"/>
+    </encoding>
+    <encoding name="WDSel" width="2">
+      <value bits="00" symbol="WDSel_FromALU" meaning="write back ALU result"/>
+      <value bits="01" symbol="WDSel_FromMEM" meaning="write back memory read data"/>
+      <value bits="10" symbol="WDSel_FromPC" meaning="write back PC plus 4"/>
+      <value bits="11" symbol="WDSel_Else" meaning="fallback zero"/>
+    </encoding>
+    <encoding name="DMCtrl" width="1">
+      <value bits="0" symbol="DMCtrl_RD" meaning="memory read"/>
+      <value bits="1" symbol="DMCtrl_WR" meaning="memory write"/>
+    </encoding>
+  </controlEncodings>
+
+  <visualStageMap>
+    <stage name="IF" order="1">
+      <diagramBlock>NPC</diagramBlock>
+      <diagramBlock>PC</diagramBlock>
+      <diagramBlock>IM</diagramBlock>
+      <diagramBlock>IR</diagramBlock>
+      <rtlNote>PC, IF_PC, and IF_PCA4 state live in U_PC. NPC logic is physically instantiated near IF in the sketch but uses EX-stage inputs in the RTL.</rtlNote>
+    </stage>
+    <stage name="ID" order="2">
+      <diagramBlock>RF</diagramBlock>
+      <diagramBlock>EXT</diagramBlock>
+      <diagramBlock>compare block</diagramBlock>
+      <diagramBlock>Control Unit interface</diagramBlock>
+      <rtlNote>Operand forwarding and IF/ID register storage are both implemented in ControlUnit rather than as separate top-level blocks.</rtlNote>
+    </stage>
+    <stage name="EX" order="3">
+      <diagramBlock>A operand flop</diagramBlock>
+      <diagramBlock>B operand flop</diagramBlock>
+      <diagramBlock>ALU input muxes</diagramBlock>
+      <diagramBlock>ALU</diagramBlock>
+      <diagramBlock>branch pipeline flag</diagramBlock>
+      <rtlNote>branch and EX_NPCOp are flopped inside ControlUnit; ALUOut is a separate top-level flop.</rtlNote>
+    </stage>
+    <stage name="MEM" order="4">
+      <diagramBlock>ALUOut</diagramBlock>
+      <diagramBlock>DM</diagramBlock>
+      <diagramBlock>MEM stall shadow registers</diagramBlock>
+      <rtlNote>MEMSTALL is a real implementation artifact used to carry load results and control through an extra cycle.</rtlNote>
+    </stage>
+    <stage name="WB" order="5">
+      <diagramBlock>writeback mux</diagramBlock>
+      <diagramBlock>WB register bookkeeping</diagramBlock>
+      <diagramBlock>RF write port</diagramBlock>
+      <rtlNote>The writeback source select is U_MUX_3to1_LMD, and the final RF write control/data are flopped inside ControlUnit.</rtlNote>
+    </stage>
+  </visualStageMap>
+
+  <pipelineRegisters>
+    <group name="externalStageRegisters" source="cpu/rtl/rtl/riscv.v:139-172">
+      <register instance="U_A" type="Flopr" width="32" stageFrom="ID" stageTo="EX" signalIn="ID_RD1" signalOut="RD1_r"/>
+      <register instance="U_B" type="Flopr" width="32" stageFrom="ID" stageTo="EX" signalIn="ID_RD2" signalOut="RD2_r"/>
+      <register instance="U_ALUOut" type="Flopr" width="32" stageFrom="EX" stageTo="MEM" signalIn="ALU_result" signalOut="ALU_result_r"/>
+    </group>
+    <group name="IFID" owner="U_ControlUnit" source="cpu/rtl/rtl/ControlUnit.v:309-329">
+      <register instance="U_IFID_Imm12" width="12" signalIn="Imm12_in" signalOut="ID_Imm12_out"/>
+      <register instance="U_IFID_Imm32" width="32" signalIn="Imm32_in" signalOut="ID_Imm32_pipe"/>
+      <register instance="U_IFID_Offset" width="12" signalIn="Offset_in" signalOut="ID_Offset_out"/>
+      <register instance="U_IFID_Offset20" width="20" signalIn="Offset20_in" signalOut="ID_Offset20_out"/>
+      <register instance="U_IFID_rs1" width="5" signalIn="rs1" signalOut="ID_rs1_out"/>
+      <register instance="U_IFID_rs2" width="5" signalIn="rs2" signalOut="ID_rs2_out"/>
+      <register instance="U_IFID_rd" width="5" signalIn="rd_in" signalOut="ID_rd_out"/>
+      <register instance="U_IFID_PCA4" width="32" signalIn="IF_PCA4_in" signalOut="ID_PCA4_pipe"/>
+      <register instance="U_IFID_PC" width="32" signalIn="IF_PC_in" signalOut="ID_PC_pipe"/>
+      <register instance="U_IFID_opcode" width="7" signalIn="bubble ? 7'b0 : opcode" signalOut="ID_opcode"/>
+      <register instance="U_IFID_Funct3" width="3" signalIn="Funct3" signalOut="ID_Funct3"/>
+      <register instance="U_IFID_ALUOp" width="4" signalIn="ALUOp" signalOut="ID_ALUOp"/>
+      <register instance="U_IFID_RegSel" width="2" signalIn="RegSel" signalOut="ID_RegSel"/>
+      <register instance="U_IFID_ALUSrcB" width="2" signalIn="ALUSrcB" signalOut="ID_ALUSrcB"/>
+      <register instance="U_IFID_WDSel" width="2" signalIn="WDSel" signalOut="ID_WDSel"/>
+      <register instance="U_IFID_ALUSrcA" width="1" signalIn="ALUSrcA" signalOut="ID_ALUSrcA"/>
+      <register instance="U_IFID_RFWrite" width="1" signalIn="(bubble || branch) ? 1'b0 : RFWrite" signalOut="ID_RFWrite"/>
+      <register instance="U_IFID_DMCtrl" width="1" signalIn="(bubble || branch) ? 1'b0 : DMCtrl" signalOut="ID_DMCtrl"/>
+      <register instance="U_IFID_done" width="1" signalIn="(bubble || branch) ? 1'b0 : IF_done_reg" signalOut="ID_done"/>
+    </group>
+    <group name="IDEX" owner="U_ControlUnit" source="cpu/rtl/rtl/ControlUnit.v:331-379">
+      <register instance="U_IDEX_opcode" width="7" signalIn="branch ? 7'b0 : ID_opcode" signalOut="EX_opcode"/>
+      <register instance="U_IDEX_Funct3" width="3" signalIn="ID_Funct3" signalOut="EX_Funct3"/>
+      <register instance="U_IDEX_ALUOp" width="4" signalIn="ID_ALUOp" signalOut="EX_ALUOp"/>
+      <register instance="U_IDEX_RegSel" width="2" signalIn="ID_RegSel" signalOut="EX_RegSel"/>
+      <register instance="U_IDEX_ALUSrcB" width="2" signalIn="ID_ALUSrcB" signalOut="EX_ALUSrcB"/>
+      <register instance="U_IDEX_WDSel" width="2" signalIn="ID_WDSel" signalOut="EX_WDSel"/>
+      <register instance="U_IDEX_ALUSrcA" width="1" signalIn="ID_ALUSrcA" signalOut="EX_ALUSrcA"/>
+      <register instance="U_IDEX_RFWrite" width="1" signalIn="branch ? 1'b0 : ID_RFWrite" signalOut="EX_RFWrite"/>
+      <register instance="U_IDEX_DMCtrl" width="1" signalIn="branch ? 1'b0 : ID_DMCtrl" signalOut="EX_DMCtrl"/>
+      <register instance="U_IDEX_done" width="1" signalIn="branch ? 1'b0 : ID_done" signalOut="EX_done"/>
+      <register instance="U_IDEX_Imm32" width="32" signalIn="ID_Imm32_pipe" signalOut="EX_Imm32_out"/>
+      <register instance="U_IDEX_Offset" width="12" signalIn="ID_Offset_out" signalOut="EX_Offset_out"/>
+      <register instance="U_IDEX_Offset20" width="20" signalIn="ID_Offset20_out" signalOut="EX_Offset20_out"/>
+      <register instance="U_IDEX_PCA4" width="32" signalIn="ID_PCA4_pipe" signalOut="EX_PCA4_out"/>
+      <register instance="U_IDEX_PC" width="32" signalIn="ID_PC_pipe" signalOut="EX_PC_out"/>
+      <register instance="U_IDEX_rd" width="5" signalIn="ID_rd_out" signalOut="EX_rd_out"/>
+      <register instance="U_branch" width="1" signalIn="branch ? 1'b0 : ID_NPCOp != `NPC_PC" signalOut="branch"/>
+      <register instance="U_NPCOp" width="2" signalIn="branch ? `NPC_PC : ID_NPCOp" signalOut="EX_NPCOp"/>
+    </group>
+    <group name="EXMEM" owner="U_ControlUnit" source="cpu/rtl/rtl/ControlUnit.v:381-390">
+      <register instance="U_EXMEM_WD" width="32" signalIn="RD2_r" signalOut="MEM_WD_out"/>
+      <register instance="U_EXMEM_PCA4" width="32" signalIn="EX_PCA4_in" signalOut="MEM_PCA4_out"/>
+      <register instance="U_EXMEM_rd" width="5" signalIn="EX_rd" signalOut="MEM_rd_out"/>
+      <register instance="U_EXMEM_WDSel" width="2" signalIn="EX_WDSel" signalOut="MEM_WDSel_out"/>
+      <register instance="U_EXMEM_RFWrite" width="1" signalIn="EX_RFWrite" signalOut="MEM_RFWrite_out"/>
+      <register instance="U_EXMEM_DMCtrl" width="1" signalIn="EX_DMCtrl" signalOut="MEM_DMCtrl_out"/>
+      <register instance="U_EXMEM_done" width="1" signalIn="EX_done" signalOut="MEM_done_out"/>
+      <register instance="U_EXMEM_dnpc" width="32" signalIn="branch ? NPC_NPC_in : EX_PCA4_in" signalOut="MEM_dnpc_out"/>
+    </group>
+    <group name="MEMSTALL" owner="U_ControlUnit" source="cpu/rtl/rtl/ControlUnit.v:390-397">
+      <register instance="U_MEMSTALL_rd" width="5" signalIn="DMReadStall ? MEM_rd_out : 5'b0" signalOut="MEMStall_rd_out"/>
+      <register instance="U_MEMSTALL_WDSel" width="2" signalIn="DMReadStall ? MEM_WDSel_out : 2'b0" signalOut="MEMStall_WDSel_out"/>
+      <register instance="U_MEMSTALL_RFWrite" width="1" signalIn="DMReadStall ? MEM_RFWrite_out : 1'b0" signalOut="MEMStall_RFWrite_out"/>
+      <register instance="U_MEMSTALL_done" width="1" signalIn="DMReadStall ? MEM_done_out : 1'b0" signalOut="MEMStall_done_out"/>
+      <register instance="U_MEMSTALL_stall" width="1" signalIn="DMReadStall" signalOut="MEMStall_stall_out"/>
+      <register instance="U_MEMSTALL_dnpc" width="32" signalIn="MEM_dnpc_out" signalOut="MEMStall_dnpc_out"/>
+    </group>
+    <group name="MEMWB" owner="U_ControlUnit" source="cpu/rtl/rtl/ControlUnit.v:399-405">
+      <register instance="U_WB_rd" width="5" signalIn="MEMStall_stall_out ? MEMStall_rd_out : MEM_rd_out" signalOut="WB_rd_out"/>
+      <register instance="U_WB_RFWrite" width="1" signalIn="DMReadStall ? 1'b0 : (MEMStall_stall_out ? MEMStall_RFWrite_out : MEM_RFWrite_out)" signalOut="WB_RFWrite_out"/>
+      <register instance="U_WB_done" width="1" signalIn="DMReadStall ? 1'b0 : (MEMStall_stall_out ? MEMStall_done_out : MEM_done_out)" signalOut="WB_done_out"/>
+      <register instance="U_WB_WD" width="32" signalIn="WD_in" signalOut="WB_WD_out"/>
+      <register instance="U_WB_dnpc" width="32" signalIn="MEMStall_stall_out ? MEMStall_dnpc_out : MEM_dnpc_out" signalOut="WB_dnpc_out"/>
+      <register instance="U_done" width="1" signalIn="WB_done_out" signalOut="done_out"/>
+      <register instance="U_dnpc" width="32" signalIn="WB_dnpc_out" signalOut="dnpc_out"/>
+    </group>
+  </pipelineRegisters>
+
+  <pipelineStages>
+    <stage name="IF" index="1" source="cpu/rtl/rtl/riscv.v:99-119,cpu/rtl/rtl/PC.v:5-51,cpu/rtl/rtl/IM.v:3-21,cpu/rtl/rtl/IR.v:3-11">
+      <role>Fetch the next instruction word and generate the fields that will feed decode.</role>
+      <stateElements>
+        <element name="PC" kind="register" owner="U_PC" width="32" resetValue="0x00002000"/>
+        <element name="IF_PC" kind="register" owner="U_PC" width="32" resetValue="0x00000000"/>
+        <element name="IF_PCA4" kind="register" owner="U_PC" width="32" resetValue="0x00000000"/>
+      </stateElements>
+      <operations>
+        <op order="1">U_PC computes PC_NPC, IM_PC, NPC_PC, and IM_addr using the current PC, the branch redirect flag EX_branch, and the load-use bubble flag IF_bubble.</op>
+        <op order="2">U_NPC computes the candidate next PC value NPC and the current sequential PCA4.</op>
+        <op order="3">U_IM performs synchronous fetch through the DPI function instFetch at address {20'h00002, IM_addr, 2'b00}.</op>
+        <op order="4">U_IR passes in_ins through when IRWrite is high, otherwise it outputs zero.</op>
+        <op order="5">The top module extracts opcode, Funct3, Funct7, rs1, rs2, rd, Imm12, Offset20, and Offset directly from out_ins.</op>
+      </operations>
+      <decodeFields source="cpu/rtl/rtl/riscv.v:64-73">
+        <field name="opcode" bits="6:0"/>
+        <field name="Funct3" bits="14:12"/>
+        <field name="Funct7" bits="31:25"/>
+        <field name="rs1" bits="19:15"/>
+        <field name="rs2" bits="24:20"/>
+        <field name="rd" bits="11:7"/>
+        <field name="Imm12" bits="31:20"/>
+        <field name="Offset20" construction="{out_ins[31], out_ins[19:12], out_ins[20], out_ins[30:21]}"/>
+        <field name="Offset" construction="branch uses B-type immediate, sw uses S-type immediate, otherwise uses Imm12"/>
+      </decodeFields>
+      <stageOutputs>
+        <signal name="in_ins" width="32"/>
+        <signal name="out_ins" width="32"/>
+        <signal name="opcode" width="7"/>
+        <signal name="Funct3" width="3"/>
+        <signal name="Funct7" width="7"/>
+        <signal name="rs1" width="5"/>
+        <signal name="rs2" width="5"/>
+        <signal name="rd" width="5"/>
+        <signal name="Imm12" width="12"/>
+        <signal name="Offset20" width="20"/>
+        <signal name="Offset" width="12"/>
+        <signal name="IF_PC" width="32"/>
+        <signal name="IF_PCA4" width="32"/>
+      </stageOutputs>
+    </stage>
+
+    <stage name="ID" index="2" source="cpu/rtl/rtl/riscv.v:121-152,cpu/rtl/rtl/ControlUnit.v:120-329,cpu/rtl/rtl/RF.v:4-47,cpu/rtl/rtl/EXT.v:3-16">
+      <role>Decode the instruction, read the register file, extend immediates, resolve forwarding for decode-time compare, and capture IF/ID state.</role>
+      <operations>
+        <op order="1">U_RF reads RR1=ID_rs1 and RR2=ID_rs2 and later writes WB_WD to WR when WB_RFWrite is high.</op>
+        <op order="2">U_EXT sign-extends or zero-extends Imm12. In the current decoder, signed extension is used for all implemented immediate paths.</op>
+        <op order="3">ControlUnit computes the main control outputs RFWrite, DMCtrl, PCWrite, IRWrite, InsMemRW, ExtSel, ALUOp, NPCOp, ALUSrcA, ALUSrcB, RegSel, and WDSel from opcode and funct fields.</op>
+        <op order="4">ControlUnit performs decode-stage forwarding so that ID_RD1_out and ID_RD2_out may come from EX, MEM, or WB instead of raw RF outputs.</op>
+        <op order="5">ID_zero is generated by direct compare of ID_RD1_out and ID_RD2_out and later drives branch intent generation.</op>
+        <op order="6">ControlUnit latches decoded control and data into the IF/ID register group.</op>
+      </operations>
+      <forwardedOperands>
+        <operand name="ID_RD1_out" priority="EX then MEM then WB then RF">
+          <source net="ALU_result" when="EXID_forward1"/>
+          <source net="ALU_result_r" when="MEMID_forward1"/>
+          <source net="WB_WD_in" when="WBID_forward1"/>
+          <source net="RD1_in" when="no forwarding hit"/>
+        </operand>
+        <operand name="ID_RD2_out" priority="EX then MEM then WB then RF">
+          <source net="ALU_result" when="EXID_forward2"/>
+          <source net="ALU_result_r" when="MEMID_forward2"/>
+          <source net="WB_WD_in" when="WBID_forward2"/>
+          <source net="RD2_in" when="no forwarding hit"/>
+        </operand>
+      </forwardedOperands>
+      <stageOutputs>
+        <signal name="ID_RD1" width="32"/>
+        <signal name="ID_RD2" width="32"/>
+        <signal name="ID_Imm12" width="12"/>
+        <signal name="ID_Offset" width="12"/>
+        <signal name="ID_Offset20" width="20"/>
+        <signal name="ID_rs1" width="5"/>
+        <signal name="ID_rs2" width="5"/>
+        <signal name="ID_rd" width="5"/>
+        <signal name="ID_ALUOp" width="4"/>
+        <signal name="ID_ALUSrcA" width="1"/>
+        <signal name="ID_ALUSrcB" width="2"/>
+        <signal name="ID_WDSel" width="2"/>
+        <signal name="ID_RegSel" width="2"/>
+        <signal name="ID_RFWrite" width="1"/>
+        <signal name="ID_DMCtrl" width="1"/>
+        <signal name="ID_done" width="1"/>
+      </stageOutputs>
+    </stage>
+
+    <stage name="EX" index="3" source="cpu/rtl/rtl/riscv.v:139-172,cpu/rtl/rtl/ControlUnit.v:331-379,cpu/rtl/rtl/MUX_2to1_A.v:3-22,cpu/rtl/rtl/MUX_3to1_B.v:3-19,cpu/rtl/rtl/ALU.v:4-57,cpu/rtl/rtl/NPC.v:4-52">
+      <role>Latch operands, select ALU inputs, execute arithmetic or address generation, and derive the eventual next-PC target.</role>
+      <operations>
+        <op order="1">U_A and U_B latch ID_RD1 and ID_RD2 into RD1_r and RD2_r.</op>
+        <op order="2">U_MUX_2to1_A selects A from RD1_r or the alternate 5-bit value; in the current top-level this alternate value is hard-wired to 5'h0.</op>
+        <op order="3">U_MUX_3to1_B selects B from RD2_r, EX_Imm32, or sign-extended EX_Offset.</op>
+        <op order="4">U_ALU executes the selected ALUOp and produces ALU_result.</op>
+        <op order="5">ControlUnit converts ID_NPCOp into flopped branch and EX_NPCOp signals that drive redirect behavior one stage later.</op>
+        <op order="6">U_NPC computes NPC from NPC_PC, EX_NPCOp, EX_Offset, EX_Offset20, and RD1_r.</op>
+      </operations>
+      <stageOutputs>
+        <signal name="A" width="32"/>
+        <signal name="B" width="32"/>
+        <signal name="ALU_result" width="32"/>
+        <signal name="EX_branch" width="1"/>
+        <signal name="EX_NPCOp" width="2"/>
+        <signal name="EX_Imm32" width="32"/>
+        <signal name="EX_Offset" width="12"/>
+        <signal name="EX_Offset20" width="20"/>
+        <signal name="EX_PCA4" width="32"/>
+        <signal name="EX_PC" width="32"/>
+        <signal name="EX_rd" width="5"/>
+      </stageOutputs>
+    </stage>
+
+    <stage name="MEM" index="4" source="cpu/rtl/rtl/riscv.v:169-184,cpu/rtl/rtl/ControlUnit.v:381-397,cpu/rtl/rtl/DM.v:3-25">
+      <role>Hold the ALU result, access data memory, and create a shadow load pipeline when memory data is the writeback source.</role>
+      <operations>
+        <op order="1">U_ALUOut latches ALU_result into ALU_result_r.</op>
+        <op order="2">ControlUnit captures store data, rd, PCA4, WDSel, RFWrite, DMCtrl, done, and dnpc into EX/MEM registers.</op>
+        <op order="3">U_DM uses Addr=ALU_result_r[11:2]. If MEM_DMCtrl is high it performs a store, otherwise it updates RD with the loaded word.</op>
+        <op order="4">DMReadStall becomes true when the MEM stage still owes a register write whose source is memory data.</op>
+        <op order="5">When DMReadStall is true, ControlUnit copies the MEM-stage writeback metadata into MEMSTALL registers for another cycle.</op>
+      </operations>
+      <stageOutputs>
+        <signal name="ALU_result_r" width="32"/>
+        <signal name="MEM_WD" width="32"/>
+        <signal name="MEM_PCA4" width="32"/>
+        <signal name="MEM_rd" width="5"/>
+        <signal name="MEM_WDSel" width="2"/>
+        <signal name="MEM_DMCtrl" width="1"/>
+        <signal name="RD" width="32"/>
+        <signal name="MEM_DMReadStall" width="1"/>
+        <signal name="MEMStall_WDSel" width="2"/>
+        <signal name="MEMStall_stall" width="1"/>
+      </stageOutputs>
+    </stage>
+
+    <stage name="WB" index="5" source="cpu/rtl/rtl/riscv.v:127-137,cpu/rtl/rtl/ControlUnit.v:399-405,cpu/rtl/rtl/MUX_3to1_LMD.v:5-26,cpu/rtl/rtl/RF.v:18-35">
+      <role>Select the final result, commit state to the register file, and export retirement-oriented bookkeeping.</role>
+      <operations>
+        <op order="1">U_MUX_3to1_LMD chooses among ALU_result_r, DR_out, and MEM_PCA4. When MEMStall_stall is high it uses the shadow control stored in MEMSTALL_WDSel.</op>
+        <op order="2">ControlUnit latches WB_rd, WB_RFWrite, WB_done, WB_WD, and WB_dnpc.</op>
+        <op order="3">U_MUX_3to1 chooses WR from WB_rd, x0, or x31, but the control input is hard-wired to RegSel_rd in the current top-level, so WR always equals WB_rd.</op>
+        <op order="4">U_RF writes WB_WD to register WR on the rising edge when WB_RFWrite is asserted and WR is not zero.</op>
+        <op order="5">done_out is flopped into top-level done, and dnpc_out is exported through DPI_getPC for difftest.</op>
+      </operations>
+      <stageOutputs>
+        <signal name="WD" width="32"/>
+        <signal name="WB_WD" width="32"/>
+        <signal name="WB_rd" width="5"/>
+        <signal name="WB_RFWrite" width="1"/>
+        <signal name="done" width="1"/>
+        <signal name="dnpc" width="32"/>
+      </stageOutputs>
+    </stage>
+  </pipelineStages>
+
+  <moduleInstances>
+    <instance name="U_ControlUnit" type="ControlUnit" stage="cross-stage" source="cpu/rtl/rtl/riscv.v:76-97,cpu/rtl/rtl/ControlUnit.v:6-408">
+      <role>Central controller, decode engine, IF/ID through MEM/WB register bank, decode forwarding unit, hazard unit, branch-intent pipeline, and writeback bookkeeping.</role>
+      <interfaceGroup name="primaryInputs">
+        <port name="clk" dir="input" width="1" net="clk"/>
+        <port name="rst" dir="input" width="1" net="rst"/>
+        <port name="zero" dir="input" width="1" net="cu_zero"/>
+        <port name="opcode" dir="input" width="7" net="EX_branch ? 7'b0 : opcode"/>
+        <port name="Funct7" dir="input" width="7" net="Funct7"/>
+        <port name="Funct3" dir="input" width="3" net="Funct3"/>
+        <port name="rs1" dir="input" width="5" net="rs1"/>
+        <port name="rs2" dir="input" width="5" net="rs2"/>
+        <port name="rd_in" dir="input" width="5" net="rd"/>
+      </interfaceGroup>
+      <interfaceGroup name="datapathInputs">
+        <port name="Imm12_in" dir="input" width="12" net="Imm12"/>
+        <port name="Imm32_in" dir="input" width="32" net="Imm32"/>
+        <port name="Offset_in" dir="input" width="12" net="Offset"/>
+        <port name="Offset20_in" dir="input" width="20" net="Offset20"/>
+        <port name="IF_PCA4_in" dir="input" width="32" net="IF_PCA4"/>
+        <port name="IF_PC_in" dir="input" width="32" net="IF_PC"/>
+        <port name="RD1_in" dir="input" width="32" net="RD1"/>
+        <port name="RD2_in" dir="input" width="32" net="RD2"/>
+        <port name="WB_WD_in" dir="input" width="32" net="WB_WD"/>
+        <port name="ALU_result" dir="input" width="32" net="ALU_result"/>
+        <port name="ALU_result_r" dir="input" width="32" net="ALU_result_r"/>
+        <port name="RD1_r" dir="input" width="32" net="RD1_r"/>
+        <port name="RD2_r" dir="input" width="32" net="RD2_r"/>
+        <port name="EX_WD_in" dir="input" width="32" net="RD2_r"/>
+        <port name="EX_PCA4_in" dir="input" width="32" net="EX_PCA4"/>
+        <port name="WD_in" dir="input" width="32" net="WD"/>
+        <port name="NPC_NPC_in" dir="input" width="32" net="NPC"/>
+      </interfaceGroup>
+      <interfaceGroup name="hazardInputs">
+        <port name="EX_rd" dir="input" width="5" net="EX_rd"/>
+        <port name="MEM_rd" dir="input" width="5" net="MEM_rd"/>
+        <port name="WB_rd" dir="input" width="5" net="WB_rd"/>
+        <port name="WB_RFWrite" dir="input" width="1" net="WB_RFWrite"/>
+      </interfaceGroup>
+      <interfaceGroup name="controlOutputs">
+        <port name="RFWrite" dir="output" width="1" net="RFWrite"/>
+        <port name="DMCtrl" dir="output" width="1" net="DMCtrl"/>
+        <port name="PCWrite" dir="output" width="1" net="PCWrite"/>
+        <port name="IRWrite" dir="output" width="1" net="IRWrite"/>
+        <port name="InsMemRW" dir="output" width="1" net="InsMemRW"/>
+        <port name="ExtSel" dir="output" width="1" net="ExtSel"/>
+        <port name="ALUOp" dir="output" width="4" net="ALUOp"/>
+        <port name="NPCOp" dir="output" width="2" net="NPCOp"/>
+        <port name="ALUSrcA" dir="output" width="1" net="ALUSrcA"/>
+        <port name="ALUSrcB" dir="output" width="2" net="ALUSrcB"/>
+        <port name="WDSel" dir="output" width="2" net="WDSel"/>
+        <port name="RegSel" dir="output" width="2" net="RegSel"/>
+      </interfaceGroup>
+      <interfaceGroup name="statusOutputs">
+        <port name="bubble" dir="output" width="1" net="IF_bubble"/>
+        <port name="ID_zero" dir="output" width="1" net="cu_zero"/>
+        <port name="DMReadStall" dir="output" width="1" net="MEM_DMReadStall"/>
+        <port name="branch" dir="output" width="1" net="EX_branch"/>
+        <port name="EX_NPCOp" dir="output" width="2" net="EX_NPCOp"/>
+        <port name="done_out" dir="output" width="1" net="done"/>
+        <port name="dnpc_out" dir="output" width="32" net="dnpc"/>
+      </interfaceGroup>
+    </instance>
+
+    <instance name="U_PC" type="PC" stage="IF" source="cpu/rtl/rtl/riscv.v:100-104,cpu/rtl/rtl/PC.v:5-51">
+      <role>Holds the architectural PC and the IF-side shadow copies IF_PC and IF_PCA4, and it chooses fetch and redirect paths.</role>
+    </instance>
+
+    <instance name="U_NPC" type="NPC" stage="EX-to-IF control path" source="cpu/rtl/rtl/riscv.v:107-109,cpu/rtl/rtl/NPC.v:4-52">
+      <role>Creates the candidate next PC for sequential flow, branch, jal, and jalr.</role>
+    </instance>
+
+    <instance name="U_IM" type="IM" stage="IF" source="cpu/rtl/rtl/riscv.v:112-114,cpu/rtl/rtl/IM.v:3-21">
+      <role>Synchronous instruction fetch front-end backed by the DPI function instFetch.</role>
+    </instance>
+
+    <instance name="U_IR" type="IR" stage="IF-to-ID boundary" source="cpu/rtl/rtl/riscv.v:117-119,cpu/rtl/rtl/IR.v:3-11">
+      <role>Instruction gate. It behaves combinationally rather than as a clocked storage element.</role>
+    </instance>
+
+    <instance name="U_RF" type="RF" stage="ID and WB" source="cpu/rtl/rtl/riscv.v:122-125,cpu/rtl/rtl/RF.v:4-47">
+      <role>32-register integer register file with x0 hard-wired to zero via combinational override.</role>
+    </instance>
+
+    <instance name="U_MUX_3to1" type="MUX_3to1" stage="WB" source="cpu/rtl/rtl/riscv.v:128-131,cpu/rtl/rtl/MUX_3to1.v:3-19">
+      <role>Destination register selector for RF writes.</role>
+      <effectiveBehavior>Because control is wired to RegSel_rd, WR always equals WB_rd in the current top-level.</effectiveBehavior>
+    </instance>
+
+    <instance name="U_MUX_3to1_LMD" type="MUX_3to1_LMD" stage="WB" source="cpu/rtl/rtl/riscv.v:134-137,cpu/rtl/rtl/MUX_3to1_LMD.v:5-26">
+      <role>Final writeback source selector with stall-control override for memory reads.</role>
+    </instance>
+
+    <instance name="U_A" type="Flopr" stage="ID-to-EX" source="cpu/rtl/rtl/riscv.v:140-142,cpu/rtl/rtl/Flopr.v:3-19">
+      <role>Operand A pipeline register.</role>
+    </instance>
+
+    <instance name="U_B" type="Flopr" stage="ID-to-EX" source="cpu/rtl/rtl/riscv.v:145-147,cpu/rtl/rtl/Flopr.v:3-19">
+      <role>Operand B pipeline register.</role>
+    </instance>
+
+    <instance name="U_EXT" type="EXT" stage="ID" source="cpu/rtl/rtl/riscv.v:150-152,cpu/rtl/rtl/EXT.v:3-16">
+      <role>Immediate extension block.</role>
+    </instance>
+
+    <instance name="U_MUX_2to1_A" type="MUX_2to1_A" stage="EX" source="cpu/rtl/rtl/riscv.v:155-157,cpu/rtl/rtl/MUX_2to1_A.v:3-22">
+      <role>ALU A-input selector.</role>
+    </instance>
+
+    <instance name="U_MUX_3to1_B" type="MUX_3to1_B" stage="EX" source="cpu/rtl/rtl/riscv.v:160-162,cpu/rtl/rtl/MUX_3to1_B.v:3-19">
+      <role>ALU B-input selector.</role>
+    </instance>
+
+    <instance name="U_ALU" type="ALU" stage="EX" source="cpu/rtl/rtl/riscv.v:165-167,cpu/rtl/rtl/ALU.v:4-57">
+      <role>Arithmetic and logical execution unit.</role>
+    </instance>
+
+    <instance name="U_ALUOut" type="Flopr" stage="EX-to-MEM" source="cpu/rtl/rtl/riscv.v:170-172,cpu/rtl/rtl/Flopr.v:3-19">
+      <role>ALU result register.</role>
+    </instance>
+
+    <instance name="U_DM" type="DM" stage="MEM" source="cpu/rtl/rtl/riscv.v:175-177,cpu/rtl/rtl/DM.v:3-25">
+      <role>Word-addressed synchronous data memory.</role>
+    </instance>
+
+    <instance name="U_DR" type="Flopr" stage="MEM-to-WB" status="commented-out" source="cpu/rtl/rtl/riscv.v:179-184">
+      <role>Optional load-data register not active in the current RTL. DR_out is instead assigned directly from RD.</role>
+    </instance>
+  </moduleInstances>
+
+  <hazardManagement source="cpu/rtl/rtl/ControlUnit.v:120-146,390-405">
+    <bubbleCondition>
+      <description>IF bubble is asserted for load-use style conflicts unless a branch redirect is already active.</description>
+      <expression><![CDATA[
+(branch != 1'b1) &&
+(((rs1 == EX_rd || rs2 == EX_rd) && EX_RFWrite == 1'b1 && EX_rd != 5'b0 && EX_WDSel == `WDSel_FromMEM) ||
+ (ID_WDSel == `WDSel_FromMEM && ID_RFWrite == 1'b1) ||
+ ((rs1 == MEM_rd || rs2 == MEM_rd) && DMReadStall == 1'b1))
+      ]]></expression>
+    </bubbleCondition>
+    <forwarding>
+      <path name="WB to ID rs1" predicate="(ID_rs1_out == WB_rd) &amp;&amp; WB_RFWrite &amp;&amp; (WB_rd != 0)"/>
+      <path name="WB to ID rs2" predicate="(ID_rs2_out == WB_rd) &amp;&amp; WB_RFWrite &amp;&amp; (WB_rd != 0)"/>
+      <path name="MEM to ID rs1" predicate="(ID_rs1_out == MEM_rd) &amp;&amp; MEM_RFWrite_out &amp;&amp; (MEM_WDSel_out == WDSel_FromALU) &amp;&amp; (MEM_rd != 0)"/>
+      <path name="MEM to ID rs2" predicate="(ID_rs2_out == MEM_rd) &amp;&amp; MEM_RFWrite_out &amp;&amp; (MEM_WDSel_out == WDSel_FromALU) &amp;&amp; (MEM_rd != 0)"/>
+      <path name="EX to ID rs1" predicate="(ID_rs1_out == EX_rd_out) &amp;&amp; EX_RFWrite &amp;&amp; (EX_rd_out != 0) &amp;&amp; (EX_WDSel == WDSel_FromALU)"/>
+      <path name="EX to ID rs2" predicate="(ID_rs2_out == EX_rd_out) &amp;&amp; EX_RFWrite &amp;&amp; (EX_rd_out != 0) &amp;&amp; (EX_WDSel == WDSel_FromALU)"/>
+      <note>EX-stage operand forwarding outputs EX_RD1_out and EX_RD2_out are declared but not consumed by the current top module, and the related ControlUnit code is commented out.</note>
+    </forwarding>
+    <loadStallShadow>
+      <predicate><![CDATA[(MEM_RFWrite_out == 1'b1) && (MEM_WDSel_out == `WDSel_FromMEM)]]></predicate>
+      <behavior>When true, MEMSTALL registers preserve rd, WDSel, RFWrite, done, and dnpc so the writeback mux and WB bookkeeping can complete in a following cycle.</behavior>
+    </loadStallShadow>
+  </hazardManagement>
+
+  <controlFlow>
+    <branchAndJumpPath source="cpu/rtl/rtl/ControlUnit.v:349-379,cpu/rtl/rtl/PC.v:26-29,cpu/rtl/rtl/NPC.v:31-47">
+      <compareSource>ID_zero = (ID_RD1_out == ID_RD2_out)</compareSource>
+      <idStageIntent>
+        <rule instruction="beq">ID_NPCOp = NPC_Offset12 when ID_zero is true, else NPC_PC</rule>
+        <rule instruction="bne">ID_NPCOp = NPC_PC when ID_zero is true, else NPC_Offset12</rule>
+        <rule instruction="jal">ID_NPCOp = NPC_Offset20</rule>
+        <rule instruction="jalr">ID_NPCOp = NPC_rs</rule>
+      </idStageIntent>
+      <pipelineAction>branch and EX_NPCOp are flopped before they affect PC redirection.</pipelineAction>
+      <pcRedirectBehavior>
+        <item>PC_NPC = EX_branch ? (NPC_NPC + 4) : (IF_bubble ? IF_PCA4 : NPC_NPC)</item>
+        <item>IM_PC = EX_branch ? NPC_NPC : (IF_bubble ? IF_PC : PC)</item>
+        <item>NPC_PC = EX_branch ? EX_PC : PC</item>
+      </pcRedirectBehavior>
+      <jalrDetail>NPC refines the jalr target to (rs_aligned + Imm12Ext) &amp; 32'hffff_fffe.</jalrDetail>
+    </branchAndJumpPath>
+    <writebackPath source="cpu/rtl/rtl/MUX_3to1_LMD.v:14-24,cpu/rtl/rtl/RF.v:18-35">
+      <item>ALU-producing instructions use WDSel_FromALU.</item>
+      <item>lw uses WDSel_FromMEM and may pass through MEMSTALL shadow bookkeeping.</item>
+      <item>jal and jalr use WDSel_FromPC so that PC plus 4 is written to rd.</item>
+    </writebackPath>
+  </controlFlow>
+
+  <dataFlowSummary>
+    <connection from="U_PC.IM_addr" to="U_IM.addr" width="10" meaning="instruction fetch index"/>
+    <connection from="U_IM.Ins" to="U_IR.in_ins" width="32" meaning="fetched instruction"/>
+    <connection from="U_IR.out_ins" to="decode fields" width="32" meaning="opcode and immediate extraction"/>
+    <connection from="decode rs1/rs2/rd" to="U_ControlUnit and IFID registers" meaning="register address and hazard inputs"/>
+    <connection from="U_EXT.imm_out" to="U_ControlUnit and U_MUX_3to1_B" meaning="immediate path toward EX"/>
+    <connection from="U_RF.RD1,RD2" to="U_ControlUnit" meaning="raw register operands"/>
+    <connection from="U_ControlUnit.ID_RD1_out,ID_RD2_out" to="U_A,U_B" meaning="forwarded decode operands"/>
+    <connection from="U_A,U_B and U_MUX_2to1_A,U_MUX_3to1_B" to="U_ALU" meaning="execute inputs"/>
+    <connection from="U_ALU.ALU_result" to="U_ALUOut and U_ControlUnit" meaning="execute result and forwarding source"/>
+    <connection from="U_ALUOut.ALU_result_r" to="U_DM and U_MUX_3to1_LMD" meaning="memory address and writeback candidate"/>
+    <connection from="U_DM.RD" to="DR_out and U_MUX_3to1_LMD" meaning="load-data writeback candidate"/>
+    <connection from="U_MUX_3to1_LMD.out" to="U_ControlUnit.WB_WD_out and U_RF.WD" meaning="final writeback data"/>
+    <connection from="U_ControlUnit.WB_rd_out" to="U_MUX_3to1.out and U_RF.WR" meaning="register write destination"/>
+    <connection from="U_ControlUnit.branch and EX_NPCOp" to="U_PC and U_NPC" meaning="control redirect path"/>
+  </dataFlowSummary>
+
+  <implementationNotes>
+    <note severity="important" source="cpu/rtl/rtl/riscv.v:128-131">RegSel is generated by ControlUnit but the actual top-level destination mux control is hard-wired to RegSel_rd, so WR always equals WB_rd.</note>
+    <note severity="important" source="cpu/rtl/rtl/ControlUnit.v:148-154">EX-stage forwarding placeholders EX_RD1_out and EX_RD2_out exist, but the top-level does not use them and the forwarding logic is commented out.</note>
+    <note severity="important" source="cpu/rtl/rtl/IR.v:3-10">IR is not a clocked register; it is a combinational gate that outputs zero when IRWrite is low.</note>
+    <note severity="important" source="cpu/rtl/rtl/riscv.v:179-184">The optional load-data register U_DR is commented out. DR_out is directly assigned from RD.</note>
+    <note severity="important" source="cpu/rtl/rtl/riscv.v:166,cpu/rtl/rtl/ControlUnit.v:143-146">ALU.zero is generated, but the active branch compare path uses cu_zero from ControlUnit.ID_zero rather than the ALU zero output.</note>
+    <note severity="important" source="cpu/rtl/rtl/MUX_2to1_A.v:3-10,cpu/rtl/rtl/ControlUnit.v:156-295">ALUSrcA exists, but the alternate input on U_MUX_2to1_A is hard-wired to 5'h0 and the current decode does not actively select it for implemented instructions.</note>
+    <note severity="info" source="cpu/rtl/rtl/ControlUnit.v:103-105">State, NxtState, and the AR/MEM/WB/EX bookkeeping registers are declared, but the current controller behavior is direct combinational decode plus distributed pipeline flops rather than an active finite state machine.</note>
+    <note severity="info" source="cpu/rtl/rtl/PC.v:32-47">PCWrite is initialized high and never deasserted by the current decoder. Stalls are modeled through PC_NPC and IM_PC path selection rather than by freezing the PC register with PCWrite low.</note>
+    <note severity="info" source="cpu/rtl/rtl/IM.v:13-19,cpu/rtl/rtl/DM.v:15-22">Both instruction and data memories are modeled as word arrays with synchronous always blocks.</note>
+    <note severity="info" source="cpu/rtl/rtl/riscv.v:186-191,cpu/rtl/rtl/RF.v:37-43">DPI exports are enabled by the difftest macro so the testbench can observe committed PC and architectural registers.</note>
+  </implementationNotes>
+</rv32PipelineArchitecture>

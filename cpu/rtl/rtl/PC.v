@@ -19,7 +19,8 @@ always @(posedge clk or posedge rst) begin
         PC <= 32'h0000_2000;
     end
     else if (PCWrite) begin
-        PC <= (branch || stall) ? PC_NPC : NPC;
+        // PC_NPC is already the final next-PC value from the control pipeline.
+        PC <= PC_NPC;
     end
 
 end

@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-05-01T00:00:00.000Z" agent="Codex" version="26.0.11" type="device" compressed="false">
+  <diagram id="rv32-pipeline-rtl" name="RV32 Pipeline RTL">
+    <mxGraphModel dx="1920" dy="1080" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1080" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="2" value="RV32 Pipeline RTL Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=24;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="520" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="3" value="draw.io native file generated from the hand sketch plus cpu/rtl/rtl/*.v" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=12;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="700" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="10" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8db;strokeColor=#d6b656;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="250" height="620" as="geometry"/>
+        </mxCell>
+        <mxCell id="11" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8db;strokeColor=#d6b656;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="310" y="80" width="250" height="620" as="geometry"/>
+        </mxCell>
+        <mxCell id="12" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8db;strokeColor=#d6b656;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="80" width="300" height="620" as="geometry"/>
+        </mxCell>
+        <mxCell id="13" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8db;strokeColor=#d6b656;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="900" y="80" width="300" height="620" as="geometry"/>
+        </mxCell>
+        <mxCell id="14" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8db;strokeColor=#d6b656;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="80" width="250" height="620" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="15" value="IF" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;fontColor=#6b9c88;" vertex="1" parent="1">
+          <mxGeometry x="130" y="90" width="70" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="16" value="ID" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;fontColor=#6b9c88;" vertex="1" parent="1">
+          <mxGeometry x="400" y="90" width="70" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="17" value="EX" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;fontColor=#6b9c88;" vertex="1" parent="1">
+          <mxGeometry x="695" y="90" width="70" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="18" value="MEM" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;fontColor=#6b9c88;" vertex="1" parent="1">
+          <mxGeometry x="1015" y="90" width="70" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="19" value="WB" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;fontColor=#6b9c88;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="90" width="70" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="20" value="NPC&#xa;U_NPC&#xa;NPCOp, Offset12, Offset20, rs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="70" y="130" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="21" value="PC&#xa;U_PC&#xa;PC, IF_PC, IF_PCA4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="70" y="230" width="100" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="22" value="IM&#xa;U_IM&#xa;DPI instFetch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="185" y="230" width="90" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="23" value="IR&#xa;U_IR&#xa;gated instruction output" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="185" y="380" width="90" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="30" value="RF&#xa;U_RF&#xa;RR1, RR2, WR, WD" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="365" y="200" width="110" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="31" value="EXT&#xa;U_EXT&#xa;Imm12 to Imm32" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="390" y="350" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="32" value="ID compare&#xa;ID_zero&#xa;forwarded operands" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef8ee;strokeColor=#5a8c5a;strokeWidth=1.5;dashed=1;fontSize=13;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="350" y="470" width="150" height="85" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="40" value="Flopr A&#xa;RD1_r" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4ff;strokeColor=#2f6fab;strokeWidth=2;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="615" y="190" width="80" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="41" value="Flopr B&#xa;RD2_r" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4ff;strokeColor=#2f6fab;strokeWidth=2;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="615" y="275" width="80" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="42" value="MUX A&#xa;U_MUX_2to1_A" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=12;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="720" y="195" width="70" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="43" value="MUX B&#xa;U_MUX_3to1_B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=12;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="720" y="280" width="70" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="44" value="ALU&#xa;U_ALU&#xa;ADD, SUB, AND, OR, XOR, SLL, SRL, SRA" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="805" y="205" width="70" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="45" value="branch and EX_NPCOp&#xa;flopped in ControlUnit&#xa;branch resolved from ID compare path" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef8ee;strokeColor=#5a8c5a;strokeWidth=1.5;dashed=1;fontSize=12;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="640" y="390" width="190" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="50" value="ALUOut&#xa;U_ALUOut&#xa;ALU_result_r" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4ff;strokeColor=#2f6fab;strokeWidth=2;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="925" y="215" width="70" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="51" value="DM&#xa;U_DM&#xa;Addr[11:2], WD, RD" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1015" y="180" width="145" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="52" value="MEMSTALL shadow&#xa;U_MEMSTALL_rd&#xa;U_MEMSTALL_WDSel&#xa;U_MEMSTALL_RFWrite&#xa;U_MEMSTALL_done&#xa;U_MEMSTALL_stall&#xa;U_MEMSTALL_dnpc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef8ee;strokeColor=#5a8c5a;strokeWidth=1.5;dashed=1;fontSize=12;align=left;verticalAlign=top;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="960" y="410" width="210" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="60" value="WB MUX&#xa;U_MUX_3to1_LMD&#xa;ALU or MEM or PC+4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="200" width="125" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="61" value="WR MUX&#xa;U_MUX_3to1&#xa;effective path is WB_rd" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;strokeWidth=2;fontSize=12;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="430" width="125" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="62" value="WB regs in ControlUnit&#xa;WB_rd, WB_RFWrite, WB_WD&#xa;done, dnpc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef8ee;strokeColor=#5a8c5a;strokeWidth=1.5;dashed=1;fontSize=12;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1245" y="335" width="175" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="70" value="ControlUnit&#xa;decode, hazard, forwarding, pipeline registers, writeback bookkeeping" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f7fa;strokeColor=#0d47a1;strokeWidth=2;fontSize=18;fontStyle=1;align=left;verticalAlign=top;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="740" width="1430" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="71" value="IF and IFID&#xa;Imm12, Imm32, Offset, Offset20, rs1, rs2, rd, IF_PC, IF_PCA4&#xa;ALUOp, ALUSrcA, ALUSrcB, WDSel, RFWrite, DMCtrl, done" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.5;fontSize=12;align=left;verticalAlign=top;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="65" y="780" width="320" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="72" value="ID forwarding and compare&#xa;EX to ID, MEM to ID, WB to ID&#xa;ID_zero from forwarded operands&#xa;bubble for load use and DMReadStall" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.5;fontSize=12;align=left;verticalAlign=top;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="405" y="780" width="300" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="73" value="IDEX and branch pipe&#xa;EX_ALUOp, EX_ALUSrcA, EX_ALUSrcB, EX_WDSel, EX_rd&#xa;EX_Imm32, EX_Offset, EX_Offset20, EX_PC, EX_PCA4&#xa;branch and EX_NPCOp are flopped" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.5;fontSize=12;align=left;verticalAlign=top;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="725" y="780" width="330" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="74" value="EXMEM, MEMSTALL and WB&#xa;MEM_WD, MEM_PCA4, MEM_rd, MEM_WDSel, MEM_DMCtrl&#xa;load path shadowed by MEMSTALL when WDSel is FromMEM&#xa;WB_rd, WB_RFWrite, WB_WD, done, dnpc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#90a4ae;strokeWidth=1.5;fontSize=12;align=left;verticalAlign=top;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="1075" y="780" width="370" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="100" value="IM_PC and IM_addr" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="21" target="22">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="101" value="in_ins" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="22" target="23">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="102" value="Imm12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="23" target="31">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="103" value="opcode, funct, rs, rd, offsets" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#1565c0;dashed=1;dashPattern=8 4;fontColor=#1565c0;fontSize=11;" edge="1" parent="1" source="23" target="70">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="104" value="ID_rs1 and ID_rs2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="70" target="30">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="105" value="RD1 and RD2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="30" target="70">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="106" value="ID_RD1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="70" target="40">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="107" value="ID_RD2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="70" target="41">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="108" value="RD1_r" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="40" target="42">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="109" value="RD2_r" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="41" target="43">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="110" value="EX_Imm32" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="31" target="43">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="111" value="EX_Offset" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#1565c0;dashed=1;dashPattern=8 4;fontColor=#1565c0;fontSize=11;" edge="1" parent="1" source="70" target="43">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="112" value="A" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="42" target="44">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="113" value="B" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="43" target="44">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="114" value="ALU_result" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="44" target="50">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="115" value="Addr = ALU_result_r[11:2]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="50" target="51">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="116" value="MEM_WD and MEM_DMCtrl" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="70" target="51">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="117" value="RD and DR_out" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="51" target="60">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="118" value="ALU_result_r" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="50" target="60">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="119" value="MEM_PCA4 and WDSel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="70" target="60">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="120" value="WB_WD" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="60" target="30">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="121" value="WB_rd" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="70" target="61">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="122" value="WR" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#202020;fontSize=11;" edge="1" parent="1" source="61" target="30">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="123" value="forwarded ID operands" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#c62828;dashed=1;dashPattern=4 4;fontColor=#c62828;fontSize=11;" edge="1" parent="1" source="30" target="32">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="124" value="ID_zero" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#c62828;dashed=1;dashPattern=4 4;fontColor=#c62828;fontSize=11;" edge="1" parent="1" source="32" target="70">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="125" value="ALU_result for forwarding" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#c62828;dashed=1;dashPattern=4 4;fontColor=#c62828;fontSize=11;" edge="1" parent="1" source="44" target="70">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="126" value="ALU_result_r for forwarding" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#c62828;dashed=1;dashPattern=4 4;fontColor=#c62828;fontSize=11;" edge="1" parent="1" source="50" target="70">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="127" value="WD_in" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#c62828;dashed=1;dashPattern=4 4;fontColor=#c62828;fontSize=11;" edge="1" parent="1" source="60" target="70">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="128" value="DMReadStall" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#c62828;dashed=1;dashPattern=4 4;fontColor=#c62828;fontSize=11;" edge="1" parent="1" source="51" target="70">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="129" value="NPC_PC and EX_PC" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.8;strokeColor=#2e7d32;dashed=1;dashPattern=6 3;fontColor=#2e7d32;fontSize=11;" edge="1" parent="1" source="21" target="20">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="130" value="NPC and PC_NPC" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.8;strokeColor=#2e7d32;dashed=1;dashPattern=6 3;fontColor=#2e7d32;fontSize=11;" edge="1" parent="1" source="20" target="21">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="131" value="PCWrite, bubble, EX_branch" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#1565c0;dashed=1;dashPattern=8 4;fontColor=#1565c0;fontSize=11;" edge="1" parent="1" source="70" target="21">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="132" value="IRWrite" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#1565c0;dashed=1;dashPattern=8 4;fontColor=#1565c0;fontSize=11;" edge="1" parent="1" source="70" target="23">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="133" value="ExtSel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#1565c0;dashed=1;dashPattern=8 4;fontColor=#1565c0;fontSize=11;" edge="1" parent="1" source="70" target="31">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="134" value="EX_ALUSrcA" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#1565c0;dashed=1;dashPattern=8 4;fontColor=#1565c0;fontSize=11;" edge="1" parent="1" source="70" target="42">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="135" value="EX_ALUOp" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#1565c0;dashed=1;dashPattern=8 4;fontColor=#1565c0;fontSize=11;" edge="1" parent="1" source="70" target="44">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="136" value="EX_NPCOp" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.8;strokeColor=#2e7d32;dashed=1;dashPattern=6 3;fontColor=#2e7d32;fontSize=11;" edge="1" parent="1" source="70" target="20">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="137" value="WB_RFWrite" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#1565c0;dashed=1;dashPattern=8 4;fontColor=#1565c0;fontSize=11;" edge="1" parent="1" source="70" target="30">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="138" value="InsMemRW" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#1565c0;dashed=1;dashPattern=8 4;fontColor=#1565c0;fontSize=11;" edge="1" parent="1" source="70" target="22">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="139" value="load path shadow" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.6;strokeColor=#c62828;dashed=1;dashPattern=4 4;fontColor=#c62828;fontSize=11;" edge="1" parent="1" source="70" target="52">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

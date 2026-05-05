@@ -11,12 +11,9 @@ module MUX_3to1_B(X,Y,Z,control,out, Imm, Offset);
     input [11:0] Offset;
 
     always @(*) begin
-        case(control)
-            `ALUSrcB_B     : out = X;
-            `ALUSrcB_Imm   : out = Imm;
-            `ALUSrcB_Offset: out = $signed({{20{Offset[11]}}, Offset});
-            `ALUSrcB_else  : out = X;
-        endcase
+        // The B operand is preselected before the ID/EX boundary to shorten the
+        // EX-stage control-to-ALU path, while keeping the original top-level wiring.
+        out = Imm;
     end
 
 endmodule

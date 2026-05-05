@@ -31,7 +31,9 @@ module IM(clk, rst, InsMemRW, addr,Ins, IM_addr, branch);
             `endif
             
             `ifndef DIFFTEST
+            `ifndef SYNTHESIS
             Ins <= InsMemRW ? memory[address] : Ins;
+            `endif
             `endif
         end
     end

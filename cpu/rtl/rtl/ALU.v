@@ -13,19 +13,32 @@ assign zero = (A == B);
 
 wire [4:0] SHAMT;
 wire [31:0] B_ADDSUB;
-wire signed [31:0] ADD_RESULT;
-wire signed [31:0] SUB_RESULT;
+wire [31:0] ADDSUB_RESULT;
+wire [32:0] ADDSUB_EXT;
 wire signed [31:0] LOGIC_RESULT;
 wire signed [31:0] SHIFT_RESULT;
 wire SUB_MODE;
+wire ADDSUB_CO_UNUSED;
 
 assign SHAMT = B[4:0];
 
-// Share one add/sub datapath: A + (B xor sub_mask) + cin.
+// Keep the RTL arithmetic simple for simulation, and let synthesis map only
+// the ALU add/sub datapath to a stronger implementation.
 assign SUB_MODE = (ALUOp == `ALUOp_SUB);
 assign B_ADDSUB = B ^ {32{SUB_MODE}};
-assign ADD_RESULT = A + B;
-assign SUB_RESULT = $signed($unsigned(A) + $unsigned(B_ADDSUB) + {31'b0, SUB_MODE});
+`ifdef SYNTHESIS
+DW01_add #(32) U_DW_ALU_ADDER (
+    .A   (A),
+    .B   (B_ADDSUB),
+    .CI  (SUB_MODE),
+    .SUM (ADDSUB_RESULT),
+    .CO  (ADDSUB_CO_UNUSED)
+);
+`else
+assign ADDSUB_EXT    = {1'b0, A} + {1'b0, B_ADDSUB} + {32'b0, SUB_MODE};
+assign ADDSUB_RESULT = ADDSUB_EXT[31:0];
+assign ADDSUB_CO_UNUSED = ADDSUB_EXT[32];
+`endif
 
 assign LOGIC_RESULT =
     (ALUOp == `ALUOp_AND) ? (A & B) :
@@ -42,8 +55,8 @@ assign SHIFT_RESULT =
 always @(*) begin
     // synopsys parallel_case full_case
     case (ALUOp)
-        `ALUOp_ADD: ALU_result = ADD_RESULT;
-        `ALUOp_SUB: ALU_result = SUB_RESULT;
+        `ALUOp_ADD,
+        `ALUOp_SUB: ALU_result = $signed(ADDSUB_RESULT);
         `ALUOp_AND,
         `ALUOp_OR,
         `ALUOp_XOR: ALU_result = LOGIC_RESULT;
