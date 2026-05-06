@@ -47,10 +47,30 @@
 `define DMCtrl_RD    1'b0
 `define DMCtrl_WR    1'b1
 
-`define DEBUG 1
-//`define DIFFTEST 1
+// `define DEBUG 1
+`define DIFFTEST 1
 //`define SRAM 1
 
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 2024/11/20 19:50:15
+// Design Name: 
+// Module Name: instruction_def
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
 
 // OPCODE
 `define INSTR_RTYPE_OP      7'b0110011
@@ -86,18 +106,16 @@
 `define INSTR_ORI_FUNCT     3'b110
 
 
-module riscv(clk, rst, RD, out_ins
-// `ifdef DIFFTEST
-// , done
-// `endif
+module riscv(clk, rst
+`ifdef DIFFTEST
+, done
+`endif
 );
 input clk, rst;
-output [31:0] RD;
-output [31:0] out_ins;
 
-// `ifdef DIFFTEST
-// output done;
-// `endif
+`ifdef DIFFTEST
+output done;
+`endif
 
 wire RFWrite, DMCtrl, PCWrite, IRWrite, InsMemRW, ExtSel, zero, ALUSrcA;
 wire [1:0] ALUSrcB;
@@ -107,7 +125,7 @@ wire [6:0] opcode;
 wire [2:0] Funct3;
 wire [6:0] Funct7;
 wire [31:0] PC, NPC, PCA4;
-wire [31:0] in_ins, DR_out;
+wire [31:0] in_ins, out_ins, RD, DR_out;
 wire [4:0] rs1, rs2, rd;
 wire [11:0] Imm12;
 wire [31:0] Imm32;
@@ -196,9 +214,9 @@ ControlUnit U_ControlUnit(
     .DM_WD(DM_WD)
 
 
-// `ifdef DIFFTEST
-//     , .done(done)
-// `endif
+`ifdef DIFFTEST
+    , .done(done)
+`endif
 
 
 );
@@ -280,7 +298,7 @@ EXT U_EXT (
 
 // ÊuÀý»- MUX_2to1_A
 MUX_2to1_A U_MUX_2to1_A (
-    .X(RD1_r), .Y(32'h0), .control(ALUSrcA), .out(A)
+    .X(RD1_r), .Y(5'h0), .control(ALUSrcA), .out(A)
 );
 
 // ÊuÀý»- MUX_2to1_B
@@ -320,7 +338,8 @@ assign DR_out = RD;
 endmodule
 
 
-
+`include "ctrl_signal_def.v"
+`include "instruction_def.v"
 
 module ALU(A,B,ALUOp,zero,ALU_result);
     input signed [31:0] A;
@@ -400,7 +419,11 @@ end
 endmodule
 
 
+`timescale 1ns / 1ps
 
+`include "ctrl_signal_def.v"
+`include "instruction_def.v"
+`include "global_def.v"
 
 module ControlUnit(
     // control signal
@@ -462,16 +485,16 @@ module ControlUnit(
     output reg [4:0]  RF_RR1,
     output reg [4:0]  RF_RR2
 
-    // `ifdef DIFFTEST
-    // , output done
-    // `endif
+    `ifdef DIFFTEST
+    , output done
+    `endif
 
 
 );
 
-// `ifdef DIFFTEST
-// Flopr #(.WIDTH(1)) U_done (.clk(clk), .rst(rst), .in_data(WB_done), .out_data(done));
-// `endif
+`ifdef DIFFTEST
+Flopr #(.WIDTH(1)) U_done (.clk(clk), .rst(rst), .in_data(WB_done), .out_data(done));
+`endif
 
 
 /* #################################### pipeline signals #################################### */
@@ -861,28 +884,29 @@ Flopr #(.WIDTH(1) ) U_MEMstall_done    (.clk(clk), .rst(rst), .in_data(MEM_DMRea
 
 Flopr #(.WIDTH(1) ) U_MEMstall_stall   (.clk(clk), .rst(rst), .in_data(MEM_DMReadStall), .out_data(MEMStall_stall));
 
-// `ifdef DIFFTEST
+`ifdef DIFFTEST
 
-// wire [31:0] ID_dnpc, EX_dnpc, MEM_dnpc, MEMStall_dnpc, WB_dnpc, dnpc;
+wire [31:0] ID_dnpc, EX_dnpc, MEM_dnpc, MEMStall_dnpc, WB_dnpc, dnpc;
 
-// Flopr #(.WIDTH(32)) U_IFID_dnpc     (.clk(clk), .rst(rst), .in_data(pipe_flush ? 32'b0 : (IF_stall ? ID_dnpc : IF_PCA4)), .out_data(ID_dnpc)      );
-// Flopr #(.WIDTH(32)) U_IDEX_dnpc     (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : ID_dnpc)         , .out_data(EX_dnpc)      );
-// Flopr #(.WIDTH(32)) U_EXMEM_dnpc    (.clk(clk), .rst(rst), .in_data(EX_branch ? NPC_NPC : EX_dnpc)            , .out_data(MEM_dnpc)     );
-// Flopr #(.WIDTH(32)) U_MEMstall_dnpc (.clk(clk), .rst(rst), .in_data(MEM_dnpc)                                 , .out_data(MEMStall_dnpc));
-// Flopr #(.WIDTH(32)) U_MEMWB_dnpc    (.clk(clk), .rst(rst), .in_data(MEMStall_stall ? MEMStall_dnpc : MEM_dnpc), .out_data(WB_dnpc)      );
-// Flopr #(.WIDTH(32)) U_WB_dnpc       (.clk(clk), .rst(rst), .in_data(WB_dnpc)                                  , .out_data(dnpc)         );
+Flopr #(.WIDTH(32)) U_IFID_dnpc     (.clk(clk), .rst(rst), .in_data(pipe_flush ? 32'b0 : (IF_stall ? ID_dnpc : IF_PCA4)), .out_data(ID_dnpc)      );
+Flopr #(.WIDTH(32)) U_IDEX_dnpc     (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : ID_dnpc)         , .out_data(EX_dnpc)      );
+Flopr #(.WIDTH(32)) U_EXMEM_dnpc    (.clk(clk), .rst(rst), .in_data(EX_branch ? NPC_NPC : EX_dnpc)            , .out_data(MEM_dnpc)     );
+Flopr #(.WIDTH(32)) U_MEMstall_dnpc (.clk(clk), .rst(rst), .in_data(MEM_dnpc)                                 , .out_data(MEMStall_dnpc));
+Flopr #(.WIDTH(32)) U_MEMWB_dnpc    (.clk(clk), .rst(rst), .in_data(MEMStall_stall ? MEMStall_dnpc : MEM_dnpc), .out_data(WB_dnpc)      );
+Flopr #(.WIDTH(32)) U_WB_dnpc       (.clk(clk), .rst(rst), .in_data(WB_dnpc)                                  , .out_data(dnpc)         );
 
-// export "DPI-C" function DPI_getPC;
-// function int DPI_getPC();
-//     return dnpc;
-// endfunction
+export "DPI-C" function DPI_getPC;
+function int DPI_getPC();
+    return dnpc;
+endfunction
 
-// `endif
+`endif
 
 
 endmodule
 
 
+`include "ctrl_signal_def.v"
 
 module DM(Addr, WD, clk, DMCtrl, RD, DM_WD);
     input  [11:2] Addr;
@@ -930,6 +954,7 @@ module DM(Addr, WD, clk, DMCtrl, RD, DM_WD);
 endmodule
 
 
+`include "ctrl_signal_def.v"
 
 module EXT(imm_in, ExtSel, imm_out, EXT_Imm12);
     input  [11:0] imm_in;
@@ -948,7 +973,7 @@ module EXT(imm_in, ExtSel, imm_out, EXT_Imm12);
 
 endmodule
 
-
+`include "ctrl_signal_def.v"
 
 module Flopr #(parameter WIDTH = 32)(clk, rst, in_data, out_data);
     input         clk;
@@ -968,8 +993,8 @@ module Flopr #(parameter WIDTH = 32)(clk, rst, in_data, out_data);
 endmodule
 
 
-
-
+`timescale 1ns / 1ps
+`include "ctrl_signal_def.v"
 module IM(clk, rst, InsMemRW, addr,Ins, IM_addr, branch);
     input           clk;
     input           InsMemRW;
@@ -996,15 +1021,15 @@ module IM(clk, rst, InsMemRW, addr,Ins, IM_addr, branch);
             Ins <= 32'b0;
         end
         else begin
-            // `ifdef DIFFTEST
-            // Ins <= InsMemRW ? instFetch({20'h00002, address, 2'b00}) : Ins;
-            // `endif
+            `ifdef DIFFTEST
+            Ins <= InsMemRW ? instFetch({20'h00002, address, 2'b00}) : Ins;
+            `endif
             
-            // `ifndef DIFFTEST
-            // `ifndef SYNTHESIS
+            `ifndef DIFFTEST
+            `ifndef SYNTHESIS
             Ins <= InsMemRW ? memory[address] : Ins;
-            // `endif
-            // `endif
+            `endif
+            `endif
         end
     end
 
@@ -1032,7 +1057,7 @@ module IM(clk, rst, InsMemRW, addr,Ins, IM_addr, branch);
 
 endmodule
 
-
+`include "ctrl_signal_def.v"
 
 module IR(in_ins, IRWrite, out_ins);
 
@@ -1047,7 +1072,7 @@ module IR(in_ins, IRWrite, out_ins);
 endmodule
 
 
-
+`include "ctrl_signal_def.v"
 
 module MUX_2to1_A(X,Y,control,out);
     input  [31:0] X;
@@ -1062,7 +1087,7 @@ module MUX_2to1_A(X,Y,control,out);
 
 endmodule
 
-
+`include "ctrl_signal_def.v"
 
 module MUX_3to1_B(X,Y,Z,control,out, Imm, Offset);
     input  [31:0] X;
@@ -1081,9 +1106,9 @@ module MUX_3to1_B(X,Y,Z,control,out, Imm, Offset);
 
 endmodule
 
+`timescale 1ns / 1ps
 
-
-
+`include "ctrl_signal_def.v"
 
 module MUX_3to1_LMD(X,Y,Z,control,out,PCA4);
     input  [31:0] X;
@@ -1105,7 +1130,7 @@ module MUX_3to1_LMD(X,Y,Z,control,out,PCA4);
 
 endmodule
 
-
+`include "ctrl_signal_def.v"
 
 module MUX_3to1(X,Y,Z,control,out, rd);
     input  [4:0] X;
@@ -1127,6 +1152,8 @@ module MUX_3to1(X,Y,Z,control,out, rd);
 
 endmodule
 
+`include "ctrl_signal_def.v"
+`include "instruction_def.v"
 
 module NPC(NPCOp, Offset12, Offset20, PC, rs, PCA4, NPC, NPC_PC, NPC_Offset12, NPC_Offset20, NPC_rs, NPC_taken_p4);
     input  [1:0]  NPCOp;
@@ -1208,8 +1235,9 @@ end
 endmodule
 
 
+`timescale 1ns / 1ps
 
-
+`include "ctrl_signal_def.v"
 
 module PC(clk, rst, PCWrite, NPC, PC, branch, stall, PC_NPC);
     input  clk;
@@ -1238,6 +1266,8 @@ end
 endmodule
 
 
+`include "global_def.v"
+`include "ctrl_signal_def.v"
 
 module RF(
 input [4:0] RR1,
@@ -1276,13 +1306,13 @@ end
 assign RD1 = forward1 ? FD1 : register[RF_RR1];
 assign RD2 = forward2 ? FD2 : register[RF_RR2];
 
-// `ifdef DIFFTEST
+`ifdef DIFFTEST
 
-// export "DPI-C" function DPI_getReg;
-// function int DPI_getReg(input int idx);
-//   return register[idx];
-// endfunction
+export "DPI-C" function DPI_getReg;
+function int DPI_getReg(input int idx);
+  return register[idx];
+endfunction
 
-// `endif
+`endif
 
 endmodule

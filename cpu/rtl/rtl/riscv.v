@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-`include "global_def.v"
+
 
 //////////////////////////////////////////////////////////////////////////////////
 // Company: 
@@ -20,12 +20,14 @@
 // Additional Comments:
 // 
 //////////////////////////////////////////////////////////////////////////////////
-module riscv(clk, rst
+module riscv(clk, rst, RD, out_ins
 `ifdef DIFFTEST
 , done
 `endif
 );
 input clk, rst;
+output [31:0] RD;
+output [31:0] out_ins;
 
 `ifdef DIFFTEST
 output done;
@@ -39,7 +41,7 @@ wire [6:0] opcode;
 wire [2:0] Funct3;
 wire [6:0] Funct7;
 wire [31:0] PC, NPC, PCA4;
-wire [31:0] in_ins, out_ins, RD, DR_out;
+wire [31:0] in_ins, DR_out;
 wire [4:0] rs1, rs2, rd;
 wire [11:0] Imm12;
 wire [31:0] Imm32;

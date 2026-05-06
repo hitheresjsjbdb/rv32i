@@ -1,0 +1,179 @@
+graph TD
+    %% 定义全局样式
+    %% 主体框
+    subgraph ControlUnit ["模块：ControlUnit"]
+        style ControlUnit fill:#f9f9f9,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5;
+
+        %% ====================================================================================
+        %% 1. Pre-Decode (预译码与原始信号生成) - 纯组合逻辑
+        B1_PreDec[/"1. Pre-Decode Logic
+(组合逻辑译码器)
+input: opcode, Funct7, Funct3
+generate: if_dec_* (原始控制信号)"/]
+        style B1_PreDec fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+
+        %% 2. IF Stage Control & Reg (取指级控制与寄存器)
+        B2_IF[/"2. IF Stage Control & Regs
+(Flopr U_IF_PC, U_IF_PCA4)
+input: IF_stall, EX_branch, PC, PCA4, NPC, NPC_taken_p4, IM_PC
+output: IF_PC, IF_PCA4, IM_PC (用于FETCH_PC)"/]
+        style B2_IF fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px;
+
+        %% 3. IF/ID Pipeline Register (流水线寄存器组)
+        B3_IFID[/"3. IF/ID Pipeline Registers
+(Flopr U_IFID_*)
+(含 Flush/Stall 逻辑)
+input: pipe_flush, IF_stall, if_dec_*, IF_PC, IF_PCA4, rs1/2, rd, Imm12, Offset, Offset20
+output: ID_*" /]
+        style B3_IFID fill:#fffde7,stroke:#fbc02d,stroke-width:2px,stroke-dasharray: 5 5;
+
+        %% 4. ID Stage Control & Forwarding (译码级控制/数据前递/分支决策)
+        B4_ID["4. ID Stage Control & Logic
+(Flopr U_branch, U_NPCOp)
+- 数据前递比较 (ID_rs vs MEM/WB_rd)
+- 操作数 B 选择 MUX (case ID_ALUSrcB)
+- 分支决策: ID_zero = (RD1==RD2)
+output: EX_branch, EX_NPCOp, ID_RD1/2, ID_ALU_B_sel"]
+        style B4_ID fill:#fff8e1,stroke:#ffa000,stroke-width:2px;
+
+        %% 5. ID/EX Pipeline Register (流水线寄存器组)
+        B5_IDEX[/"5. ID/EX Pipeline Registers
+(Flopr U_IDEX_*)
+(含 Stall 逻辑，不含 Flush)
+input: IF_stall, pipe_flush (用于复位控制信号), ID_*, ID_ALU_B_sel, RD2_r (EX stage input)
+output: EX_*" /]
+        style B5_IDEX fill:#ffebee,stroke:#d32f2f,stroke-width:2px,stroke-dasharray: 5 5;
+
+        %% 6. EX/MEM/WB Stage Logic (EX、MEM、WB 控制流合并)
+        B6_Pipeline["6. EX/MEM/WB Pipeline Regs & Logic
+(Flopr U_EXMEM_*, U_MEMWB_*)
+Passthrough and register standard control signals.
+Generate: MEM_DMReadStall"]
+        style B6_Pipeline fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+
+        %% 7. MEM Stall Unit (LW 暂停管理单元)
+        B7_MemStall[/"7. MEM Stall Unit
+(Flopr U_MEMstall_*)
+Registers MEM stage state when load-use stall occurs.
+generate: MEMStall_stall"/]
+        style B7_MemStall fill:#ede7f6,stroke:#512da8,stroke-width:2px;
+
+        %% 8. Hazard & Stall Detect (冒险与暂停检测) - 组合逻辑
+        B8_Hazard[/"8. Hazard & Stall Detect
+(组合逻辑)
+input: ID_rs, ID_opcode, EX_rd, MEM_rd, MEMStall_rd, EX_RFWrite, EX_WDSel, MEM_DMReadStall, MEMStall_stall, EX_branch
+generate: IF_stall, pipe_flush"/]
+        style B8_Hazard fill:#fbe9e7,stroke:#bf360c,stroke-width:2px;
+
+        %% ====================================================================================
+        %% 逻辑连接
+        %% ====================================================================================
+
+        %% 1. Pre-Decode to IF/ID Regs
+        B1_PreDec -->|if_dec_* (原始控制向量)| B3_IFID
+
+        %% 2. IF Stage and FETCH_PC drive
+        B2_IF -->|IF_PC, IF_PCA4| B3_IFID
+
+        %% 3. IF/ID Regs to ID Stage Logic
+        B3_IFID -->|ID_rs1, ID_rs2 (用于前递和暂停)| B4_ID
+        B3_IFID -->|ID_opcode, ID_rd (用于暂停检测和ID级NPC控制)| B4_ID
+        B3_IFID -->|ID_PC, ID_PCA4, ID_ALUOp, etc.| B4_ID
+        B3_IFID -->|ID_Imm12, ID_Offset| B4_ID
+
+        %% 4. ID Stage inside logic and outputs
+        B4_ID -->|ID_RD1, ID_RD2 (驱动FD1, FD2)| OUT_Data
+        B4_ID -->|EX_branch (用于 Flush 逻辑和 PC 选择)| B8_Hazard
+        B4_ID -->|ID_ALU_B_sel, EX_NPCOp, ID_Control_*| B5_IDEX
+
+        %% 5. ID/EX Regs to subsequent stages
+        B5_IDEX -->|EX_rd (用于前递比对)| B4_ID
+        B5_IDEX -->|EX_RFWrite, EX_WDSel (用于暂停检测)| B8_Hazard
+        B5_IDEX -->|EX_PCA4, EX_rd, EX_Control_*| B6_Pipeline
+
+        %% 6. Pipeline Logic (EX/MEM/WB)
+        B6_Pipeline -->|MEM_DMReadStall (触发 LW 暂停)| B7_MemStall
+        B6_Pipeline -->|MEM_RFWrite, MEM_WDSel (用于暂停)| B8_Hazard
+        B6_Pipeline -->|MEM_rd (用于前递检测)| B4_ID
+        B6_Pipeline -->|MEM_rd (用于 LW 暂停寄存)| B7_MemStall
+        B6_Pipeline -->|MEM_PCA4, MEM_rd, MEM_Control_*| OUT_TopControl
+        B6_Pipeline -->|WB_rd, WB_RFWrite (用于前递)| B4_ID
+        B6_Pipeline -->|WB_*"| OUT_TopControl
+
+        %% 7. MEM Stall Unit
+        B7_MemStall -->|MEMStall_stall (用于暂停和 WB 信号选择)| B8_Hazard
+        B7_MemStall -->|MEMStall_rd (用于暂停检测)| B8_Hazard
+        B7_MemStall -->|MEMStall_* (LW 暂停时用于 WB 输入选择)| OUT_TopControl
+
+        %% 8. Hazard & Stall Detect (关键反馈环路)
+        B8_Hazard -->|IF_stall (暂停前三级)| B2_IF
+        B8_Hazard -->|IF_stall| B3_IFID
+        B8_Hazard -->|IF_stall| B5_IDEX
+        B8_Hazard -->|pipe_flush (分支/跳转清空)| B3_IFID
+        B8_Hazard -->|pipe_flush| B5_IDEX
+
+        %% ====================================================================================
+        %% 定义顶层输入 (放在左侧)
+        subgraph TopInputs ["顶层输入"]
+            IN_Global[rst, clk, zero]
+            IN_IF[opcode, Funct7, Funct3]
+            IN_ID[rs1, rs2, rd, Imm12, Offset, Offset20]
+            IN_DataPath[PC, PCA4, NPC, NPC_taken_p4, RD1, RD2, Imm32, ALU_result_r, WD, RD2_r]
+        end
+        style TopInputs fill:none,stroke:none;
+
+        %% 连接顶层输入到相应块
+        IN_Global --> B2_IF
+        IN_IF --> B1_PreDec
+        IN_IF --> B3_IFID
+        IN_ID --> B3_IFID
+        IN_DataPath --> B2_IF
+        IN_DataPath --> B3_IFID
+        IN_DataPath --> B4_ID
+        IN_DataPath --> B5_IDEX
+        IN_DataPath --> B6_Pipeline
+
+        %% ====================================================================================
+        %% 定义顶层输出 (放在右侧)
+        subgraph OUT_TopControl ["1. 顶层控制信号输出"]
+            OUT_Cnt[PCWrite, InsMemRW, IRWrite, RFWrite, DMCtrl, ExtSel, ALUSrcA, ALUSrcB, RegSel, NPCOp, WDSel, ALUOp, stall, branch]
+        end
+        style OUT_TopControl fill:#f8f9fa,stroke:#000,stroke-width:1px;
+
+        subgraph OUT_Data ["2. 顶层数据路径端口"]
+            OUT_Dat[PC_NPC, NPC_PC, FETCH_PC, NPC_EX_Offset20, NPC_EX_Offset12, MUX_WB_rd, EXT_ID_Imm12, forward1, forward2, FD1, FD2, ALU_B_Imm, RF_WD, MUX_PCA4, DM_WD, RF_RR1, RF_RR2]
+        end
+        style OUT_Data fill:#f8f9fa,stroke:#000,stroke-width:1px;
+
+        %% 连接块输出到顶层输出端口
+        B2_IF -->|IF_stall, EX_branch, IF_PWrite, etc.| OUT_Cnt
+        B2_IF -->|IM_PC (FETCH_PC), IF_PCA4 (PC_NPC)| OUT_Data
+
+        B3_IFID -->|ID_Imm12 (EXT_ID_Imm12)| OUT_Data
+
+        B4_ID -->|ID_RD1/2 (FD1/2), forward1/2| OUT_Data
+        B4_ID -->|RF_RR1/2, EX_branch| OUT_Data
+        B4_ID -->|EX_ALUSrcA/B/Op/NPCOp| OUT_TopControl
+
+        B5_IDEX -->|EX_Offset/20| OUT_Data
+        B5_IDEX -->|EX_ALU_B_sel (ALU_B_Imm)| OUT_Data
+
+        B6_Pipeline -->|MEM_DMCtrl| OUT_TopControl
+        B6_Pipeline -->|WB_RFWrite| OUT_TopControl
+        B6_Pipeline -->|WB_rd (MUX_WB_rd), WB_WD (RF_WD)| OUT_Data
+        B6_Pipeline -->|MEM_PCA4, MEM_WD (DM_WD)| OUT_Data
+
+        B7_MemStall -->|MEMStall_WDSel (用于 WDSel MUX)| OUT_TopControl
+        %% Output Mux logic defined in code
+        %% WDSel = MEMStall_stall ? MEMStall_WDSel : MEM_WDSel;
+    end
+
+    %% 定义 Difftest 块 (可选)
+    `ifdef DIFFTEST
+    B_Difftest[Difftest Logic
+(Flopr U_IFID_dnpc... to U_WB_dnpc)
+input: PC signals
+output: done, DPI_getPC]
+    style B_Difftest fill:#cfd8dc,stroke:#455a64,stroke-width:1px;
+    B3_IFID -.-> B_Difftest
+    `endif
