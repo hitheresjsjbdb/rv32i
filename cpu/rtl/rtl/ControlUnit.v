@@ -43,8 +43,13 @@ module ControlUnit(
     input [31:0] ALU_result_r,
     input [31:0] WD,
     input [31:0] RD2_r,
+    input        IF_ready,
+    input        IF_error,
+    input        DM_ready,
+    input        DM_error,
 
     output reg stall,
+    output reg mem_hold,
     output reg branch,
     output reg [31:0] PC_NPC,
     output reg [31:0] NPC_PC,
@@ -61,8 +66,13 @@ module ControlUnit(
     output reg [31:0] RF_WD,
     output reg [31:0] MUX_PCA4,
     output reg [31:0] DM_WD,
+    output wire       DMReq,
     output reg [4:0]  RF_RR1,
-    output reg [4:0]  RF_RR2
+    output reg [4:0]  RF_RR2,
+    output wire        trap,
+    output wire [3:0]  trap_cause,
+    output wire [31:0] trap_epc,
+    output wire [31:0] trap_tval
 
     `ifdef DIFFTEST
     , output done
@@ -72,7 +82,7 @@ module ControlUnit(
 );
 
 `ifdef DIFFTEST
-Flopr #(.WIDTH(1)) U_done (.clk(clk), .rst(rst), .in_data(WB_done), .out_data(done));
+Flopr #(.WIDTH(1)) U_done (.clk(clk), .rst(rst), .in_data(WB_valid), .out_data(done));
 `endif
 
 
@@ -80,7 +90,7 @@ Flopr #(.WIDTH(1)) U_done (.clk(clk), .rst(rst), .in_data(WB_done), .out_data(do
 
 /* IF */
 
-wire        IF_done;
+wire        IF_valid;
 wire        IF_stall;
 wire [31:0] IF_PC, IF_PCA4;
 wire [31:0] NPC_NPC, IM_PC;
@@ -96,13 +106,13 @@ wire [4:0]  ID_rs1, ID_rs2, ID_rd;
 wire [3:0]  ID_ALUOp;
 wire [1:0]  ID_Regsel, ID_ALUSrcB, ID_WDSel;
 wire        ID_ALUSrcA, ID_RFWrite, ID_DMCtrl;
-wire        ID_done;
-wire        WBID_forward1, WBID_forward2;
-wire        MEMID_forward1, MEMID_forward2;
-wire        EXID_forward1, EXID_forward2;
+wire        ID_valid;
+wire        forward1_i, forward2_i;
 wire        ID_zero;
 wire [6:0]  ID_opcode;
 wire [2:0]  ID_Funct3;
+wire [31:0] ID_ins;
+wire        ID_illegal;
 reg  [1:0]  ID_NPCOp;
 
 wire [11:0] ID_Offset12;
@@ -116,53 +126,45 @@ wire [3:0]  EX_ALUOp;
 wire [4:0]  EX_rd;
 wire [1:0]  EX_Regsel, EX_ALUSrcB, EX_WDSel, EX_NPCOp;
 wire        EX_ALUSrcA, EX_RFWrite, EX_DMCtrl;
-wire        EX_done;
+wire        EX_valid;
 wire        EX_branch;
+wire        EX_redirect;
+wire        EX_redirect_wait;
 
 /* MEM */
 wire [31:0] MEM_WD, MEM_PCA4;
 wire [4:0]  MEM_rd, MEMStall_rd;
 wire [1:0]  MEM_WDSel, MEMStall_WDSel;
 wire        MEM_RFWrite, MEM_DMCtrl, MEMStall_RFWrite;
-wire        MEM_done, MEMStall_done;
+wire        MEM_valid;
 wire        MEM_DMReadStall;
-wire        MEMStall_stall;
+wire        MEMStall_valid;
 
 /* WB */
 wire [31:0] WB_WD;
 wire [4:0]  WB_rd;
 wire        WB_RFWrite;
-wire        WB_done;
-wire        ID_use_rs1;
-wire        ID_use_rs2;
-wire        ID_dep_EX;
-wire        ID_dep_MEM;
-wire        ID_dep_MEMSTALL;
-wire        load_pipe_busy;
+wire        WB_valid;
 wire        pipe_flush;
+wire        dec_valid;
+wire        if_illegal;
+wire        EX_exception;
+wire        trap_request;
+wire        EX_to_MEM_kill;
+wire        IF_access_fault;
+wire        ID_access_fault;
+wire        MEM_access_fault;
+wire        MEM_bus_wait;
+wire        front_hazard_stall;
+wire        IF_accept;
+wire        IF_stage_valid;
+wire [31:0] IF_stage_PC;
+wire [31:0] IF_stage_PCA4;
 wire [31:0] ID_Imm32_local;
 wire [31:0] ID_Offset32_local;
 reg  [31:0] ID_ALU_B_sel;
 wire [31:0] EX_ALU_B_sel;
-wire        dec_is_rtype;
-wire        dec_is_itype;
-wire        dec_is_lw;
-wire        dec_is_sw;
-wire        dec_is_btype;
-wire        dec_is_jal;
-wire        dec_is_jalr;
-wire        dec_r_add;
-wire        dec_r_sub;
-wire        dec_r_and;
-wire        dec_r_or;
-wire        dec_r_xor;
-wire        dec_r_sll;
-wire        dec_r_srl;
-wire        dec_r_sra;
-wire        dec_r_valid;
-wire        dec_i_addi;
-wire        dec_i_ori;
-wire        dec_i_valid;
+wire [31:0] MEM_PC;
 wire        id_is_beq;
 wire        id_is_bne;
 wire        id_take_branch;
@@ -172,64 +174,86 @@ wire [1:0]  if_dec_alusrcb;
 wire [1:0]  if_dec_wdsel;
 wire [3:0]  if_dec_aluop;
 
-assign dec_is_rtype = (opcode == `INSTR_RTYPE_OP);
-assign dec_is_itype = (opcode == `INSTR_ITYPE_OP);
-assign dec_is_lw    = (opcode == `INSTR_LW_OP);
-assign dec_is_sw    = (opcode == `INSTR_SW_OP);
-assign dec_is_btype = (opcode == `INSTR_BTYPE_OP);
-assign dec_is_jal   = (opcode == `INSTR_JAL_OP);
-assign dec_is_jalr  = (opcode == `INSTR_JALR_OP);
+InstructionDecoder U_InstructionDecoder (
+    .opcode(opcode),
+    .Funct7(Funct7),
+    .Funct3(Funct3),
+    .rs1(rs1),
+    .rs2(rs2),
+    .rd(rd),
+    .dec_valid(dec_valid),
+    .rfwrite(if_dec_rfwrite),
+    .dmctrl(if_dec_dmctrl),
+    .alusrcb(if_dec_alusrcb),
+    .wdsel(if_dec_wdsel),
+    .aluop(if_dec_aluop)
+);
 
-assign dec_r_add = dec_is_rtype && ({Funct7, Funct3} == `INSTR_ADD_FUNCT);
-assign dec_r_sub = dec_is_rtype && ({Funct7, Funct3} == `INSTR_SUB_FUNCT);
-assign dec_r_and = dec_is_rtype && ({Funct7, Funct3} == `INSTR_AND_FUNCT);
-assign dec_r_or  = dec_is_rtype && ({Funct7, Funct3} == `INSTR_OR_FUNCT);
-assign dec_r_xor = dec_is_rtype && ({Funct7, Funct3} == `INSTR_XOR_FUNCT);
-assign dec_r_sll = dec_is_rtype && ({Funct7, Funct3} == `INSTR_SLL_FUNCT);
-assign dec_r_srl = dec_is_rtype && ({Funct7, Funct3} == `INSTR_SRL_FUNCT);
-assign dec_r_sra = dec_is_rtype && ({Funct7, Funct3} == `INSTR_SRA_FUNCT);
-assign dec_r_valid = dec_r_add || dec_r_sub || dec_r_and || dec_r_or ||
-                     dec_r_xor || dec_r_sll || dec_r_srl || dec_r_sra;
+assign if_illegal = IF_stage_valid && !dec_valid;
 
-assign dec_i_addi = dec_is_itype && (Funct3 == `INSTR_ADDI_FUNCT);
-assign dec_i_ori  = dec_is_itype && (Funct3 == `INSTR_ORI_FUNCT);
-assign dec_i_valid = dec_i_addi || dec_i_ori;
+`ifdef WISHBONE
+assign IF_stage_valid = IF_accept;
+assign IF_stage_PC    = PC;
+assign IF_stage_PCA4  = PC + 32'd4;
+`else
+assign IF_stage_valid = IF_valid;
+assign IF_stage_PC    = IF_PC;
+assign IF_stage_PCA4  = IF_PCA4;
+`endif
 
 assign id_is_beq = (ID_opcode == `INSTR_BTYPE_OP) && (ID_Funct3 == `INSTR_BEQ_FUNCT);
 assign id_is_bne = (ID_opcode == `INSTR_BTYPE_OP) && (ID_Funct3 == `INSTR_BNE_FUNCT);
 assign id_take_branch = (id_is_beq && ID_zero) || (id_is_bne && !ID_zero);
 
-// RFWrite only needs opcode-class knowledge on the hot timing path.
-assign if_dec_rfwrite = dec_is_rtype || dec_is_itype || dec_is_lw || dec_is_jal || dec_is_jalr;
-assign if_dec_dmctrl = dec_is_sw ? `DMCtrl_WR : `DMCtrl_RD;
-assign if_dec_alusrcb = (dec_i_valid || dec_is_jalr) ? `ALUSrcB_Imm :
-                        ((dec_is_lw || dec_is_sw) ? `ALUSrcB_Offset : `ALUSrcB_B);
-assign if_dec_wdsel = dec_is_lw ? `WDSel_FromMEM :
-                      ((dec_is_jal || dec_is_jalr) ? `WDSel_FromPC : `WDSel_FromALU);
-assign if_dec_aluop[0] = dec_is_btype ||
-                         dec_i_ori ||
-                         (dec_is_rtype && (
-                             ((Funct3 == 3'b000) && Funct7[5]) ||
-                             (Funct3 == 3'b110) ||
-                             (Funct3 == 3'b101)
-                         ));
-assign if_dec_aluop[1] = dec_i_ori ||
-                         (dec_is_rtype && ((Funct3 == 3'b111) || (Funct3 == 3'b110)));
-assign if_dec_aluop[2] = dec_is_rtype &&
-                         Funct3[2] &&
-                         !Funct3[1] &&
-                         (!Funct3[0] || Funct7[5]);
-assign if_dec_aluop[3] = dec_is_rtype &&
-                         !Funct3[1] &&
-                         Funct3[0] &&
-                         (!Funct3[2] || !Funct7[5]);
+assign IF_accept             = InsMemRW && IF_ready;
+assign IF_access_fault       = IF_accept && IF_error;
+
+ExceptionUnit U_ExceptionUnit (
+    .clk(clk),
+    .rst(rst),
+    .if_ready(IF_ready),
+    .id_valid(ID_valid),
+    .id_pc(ID_PC),
+    .id_ins(ID_ins),
+    .id_illegal(ID_illegal),
+    .id_access_fault(ID_access_fault),
+    .ex_valid(EX_valid),
+    .ex_branch(EX_branch),
+    .ex_pc(EX_PC),
+    .ex_rfwrite(EX_RFWrite),
+    .ex_wdsel(EX_WDSel),
+    .ex_dmctrl(EX_DMCtrl),
+    .ex_alu_result(ALU_result),
+    .redirect_target(NPC),
+    .mem_valid(MEM_valid),
+    .mem_pc(MEM_PC),
+    .mem_wdsel(MEM_WDSel),
+    .mem_dmctrl(MEM_DMCtrl),
+    .mem_address(ALU_result_r),
+    .dm_ready(DM_ready),
+    .dm_error(DM_error),
+    .ex_exception(EX_exception),
+    .mem_access_fault(MEM_access_fault),
+    .mem_bus_wait(MEM_bus_wait),
+    .trap_request(trap_request),
+    .ex_redirect_wait(EX_redirect_wait),
+    .ex_redirect(EX_redirect),
+    .dm_req(DMReq),
+    .trap(trap),
+    .trap_cause(trap_cause),
+    .trap_epc(trap_epc),
+    .trap_tval(trap_tval)
+);
 
 /* ******************************** Outputs ******************************** */
 
 always @(*) begin
-    PCWrite         = IF_PCWrite;
-    InsMemRW        = IF_InsMemRW;
-    IRWrite         = IF_IRWrite;
+    PCWrite         = IF_PCWrite && !trap && !trap_request &&
+                      !MEM_bus_wait &&
+                      (EX_redirect || (!front_hazard_stall && IF_ready));
+    InsMemRW        = IF_InsMemRW && !trap && !trap_request &&
+                      !MEM_bus_wait && !front_hazard_stall;
+    IRWrite         = IF_IRWrite && IF_accept && !trap && !trap_request;
     RFWrite         = WB_RFWrite;
     DMCtrl          = MEM_DMCtrl;
     ExtSel          = IF_ExtSel;//ID_ExtSel;
@@ -238,11 +262,20 @@ always @(*) begin
     ALUOp           = EX_ALUOp;
     RegSel          = IF_RegSel;//WB_RegSel
     NPCOp           = EX_NPCOp;
-    WDSel           = MEMStall_stall ? MEMStall_WDSel : MEM_WDSel;
+    WDSel           = MEMStall_valid ? MEMStall_WDSel : MEM_WDSel;
 
     stall           = IF_stall;
-    branch          = EX_branch;
-    PC_NPC          = EX_branch ? NPC_taken_p4 : IF_stall ? IF_PCA4 : NPC_NPC;
+    mem_hold        = MEM_bus_wait || EX_redirect_wait;
+    branch          = EX_redirect;
+`ifdef WISHBONE
+    // The registered PC is the Wishbone request address. After discarding the
+    // outstanding sequential response, restart at the actual branch target.
+    PC_NPC          = EX_redirect ? NPC_NPC : IF_stall ? IF_PCA4 : NPC_NPC;
+`else
+    // The internal IM can consume the target combinationally in the redirect
+    // cycle, so PC advances to the following instruction at the same edge.
+    PC_NPC          = EX_redirect ? NPC_taken_p4 : IF_stall ? IF_PCA4 : NPC_NPC;
+`endif
     // Drive the EX-stage base PC directly so branch only acts as a final select,
     // not as a control input to the NPC adder cone.
     NPC_PC          = EX_PC;
@@ -251,8 +284,8 @@ always @(*) begin
     NPC_EX_Offset12 = EX_Offset;
     MUX_WB_rd       = WB_rd;
     EXT_ID_Imm12    = ID_Imm12;
-    forward1        = (WBID_forward1 || MEMID_forward1);
-    forward2        = (WBID_forward2 || MEMID_forward2);
+    forward1        = forward1_i;
+    forward2        = forward2_i;
     FD1             = ID_RD1;
     FD2             = ID_RD2;
     ALU_B_Imm       = EX_ALU_B_sel;
@@ -287,28 +320,35 @@ end
 
 // Hazard detect in ID using only registered instruction fields.
 // This keeps the raw IM output out of the fetch-address feedback loop.
-assign pipe_flush = EX_branch;
-assign ID_use_rs1 = (ID_opcode == `INSTR_RTYPE_OP) ||
-                    (ID_opcode == `INSTR_ITYPE_OP) ||
-                    (ID_opcode == `INSTR_LW_OP)    ||
-                    (ID_opcode == `INSTR_SW_OP)    ||
-                    (ID_opcode == `INSTR_BTYPE_OP) ||
-                    (ID_opcode == `INSTR_JALR_OP);
-assign ID_use_rs2 = (ID_opcode == `INSTR_RTYPE_OP) ||
-                    (ID_opcode == `INSTR_SW_OP)    ||
-                    (ID_opcode == `INSTR_BTYPE_OP);
-assign ID_dep_EX  = (((ID_use_rs1 && (ID_rs1 == EX_rd)) || (ID_use_rs2 && (ID_rs2 == EX_rd))) &&
-                     (EX_RFWrite == 1'b1) && (EX_rd != 5'b0));
-assign ID_dep_MEM = (((ID_use_rs1 && (ID_rs1 == MEM_rd)) || (ID_use_rs2 && (ID_rs2 == MEM_rd))) &&
-                     (MEM_DMReadStall == 1'b1) && (MEM_rd != 5'b0));
-assign ID_dep_MEMSTALL = (((ID_use_rs1 && (ID_rs1 == MEMStall_rd)) || (ID_use_rs2 && (ID_rs2 == MEMStall_rd))) &&
-                          (MEMStall_stall == 1'b1) && (MEMStall_rd != 5'b0));
-assign load_pipe_busy = ((EX_RFWrite == 1'b1) && (EX_WDSel == `WDSel_FromMEM)) ||
-                        (MEM_DMReadStall == 1'b1) ||
-                        (MEMStall_stall == 1'b1);
-assign IF_stall   = (pipe_flush != 1'b1) && (load_pipe_busy || ID_dep_EX || ID_dep_MEM || ID_dep_MEMSTALL);
+assign pipe_flush = EX_redirect || trap_request || trap;
 
-assign IM_PC   = EX_branch ? NPC_NPC : IF_stall ? IF_PC : PC;
+HazardUnit U_HazardUnit (
+    .id_valid(ID_valid),
+    .id_opcode(ID_opcode),
+    .id_rs1(ID_rs1),
+    .id_rs2(ID_rs2),
+    .ex_rd(EX_rd),
+    .ex_valid(EX_valid),
+    .ex_rfwrite(EX_RFWrite),
+    .ex_wdsel(EX_WDSel),
+    .mem_rd(MEM_rd),
+    .mem_valid(MEM_valid),
+    .mem_rfwrite(MEM_RFWrite),
+    .mem_wdsel(MEM_WDSel),
+    .mem_dmread_stall(MEM_DMReadStall),
+    .memstall_rd(MEMStall_rd),
+    .memstall_valid(MEMStall_valid),
+    .pipe_flush(pipe_flush),
+    .mem_bus_wait(MEM_bus_wait),
+    .if_ready(IF_ready),
+    .front_hazard_stall(front_hazard_stall),
+    .if_stall(IF_stall)
+);
+
+// A bus wait must keep requesting the architectural PC. IF_PC is only the
+// held pipeline metadata used for an actual dependency/data-memory stall.
+assign IM_PC = EX_redirect ? NPC_NPC :
+               ((front_hazard_stall || MEM_bus_wait) ? IF_PC : PC);
 
 assign ID_Imm32_local    = {{20{ID_Imm12[11]}}, ID_Imm12};
 assign ID_Offset32_local = {{20{ID_Offset[11]}}, ID_Offset};
@@ -317,24 +357,35 @@ assign ID_Offset32_local = {{20{ID_Offset[11]}}, ID_Offset};
 
 /* ################################ ID ################################ */
 
-// ID stage forward
-
-// read and write RF at the same cycle
-assign WBID_forward1 = (ID_rs1 == WB_rd) && (WB_RFWrite == 1'b1) && (WB_rd != 5'b0);
-assign WBID_forward2 = (ID_rs2 == WB_rd) && (WB_RFWrite == 1'b1) && (WB_rd != 5'b0);
-
-// EX to 2nd
-assign MEMID_forward1 = (ID_rs1 == MEM_rd) && (MEM_RFWrite == 1'b1) && (MEM_WDSel == `WDSel_FromALU) && (MEM_rd != 5'b0);
-assign MEMID_forward2 = (ID_rs2 == MEM_rd) && (MEM_RFWrite == 1'b1) && (MEM_WDSel == `WDSel_FromALU) && (MEM_rd != 5'b0);
-
-// forwarding
-assign ID_RD1 = (MEMID_forward1 ? ALU_result_r : (WBID_forward1 ? WB_WD : 32'h0));
-assign ID_RD2 = (MEMID_forward2 ? ALU_result_r : (WBID_forward2 ? WB_WD : 32'h0));
+ForwardingUnit U_ForwardingUnit (
+    .id_valid(ID_valid),
+    .id_rs1(ID_rs1),
+    .id_rs2(ID_rs2),
+    .ex_rd(EX_rd),
+    .ex_valid(EX_valid),
+    .ex_rfwrite(EX_RFWrite),
+    .ex_wdsel(EX_WDSel),
+    .ex_pca4(EX_PCA4),
+    .ex_alu_result(ALU_result),
+    .mem_rd(MEM_rd),
+    .mem_valid(MEM_valid),
+    .mem_rfwrite(MEM_RFWrite),
+    .mem_wdsel(MEM_WDSel),
+    .mem_pca4(MEM_PCA4),
+    .mem_alu_result(ALU_result_r),
+    .wb_rd(WB_rd),
+    .wb_valid(WB_valid),
+    .wb_rfwrite(WB_RFWrite),
+    .wb_data(WB_WD),
+    .forward1(forward1_i),
+    .forward2(forward2_i),
+    .id_rd1(ID_RD1),
+    .id_rd2(ID_RD2)
+);
 
 assign ID_zero = (RD1 == RD2);
-
-Flopr #(.WIDTH(7)) U_IFID_opcode (.clk(clk), .rst(rst), .in_data(pipe_flush ? 7'b0 : (IF_stall ? ID_opcode : opcode)), .out_data(ID_opcode));
-Flopr #(.WIDTH(3)) U_IFID_Funct3 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 3'b0 : (IF_stall ? ID_Funct3 : Funct3)), .out_data(ID_Funct3));
+assign ID_opcode = ID_ins[6:0];
+assign ID_Funct3 = ID_ins[14:12];
 
 
 always @(*) begin
@@ -359,120 +410,150 @@ always @(*) begin
     endcase
 end
 
-Flopr #(.WIDTH(1)) U_branch (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 1'b0 : (ID_NPCOp != `NPC_PC)), .out_data(EX_branch));
-Flopr #(.WIDTH(2)) U_NPCOp (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? `NPC_PC : ID_NPCOp), .out_data(EX_NPCOp));
-
 /* ################################ EX ################################ */
 
 /* ################################ MEM ################################ */
 
-assign MEM_DMReadStall = MEM_RFWrite == 1'b1 && MEM_WDSel == `WDSel_FromMEM;
+`ifdef WISHBONE
+assign MEM_DMReadStall = 1'b0;
+`else
+assign MEM_DMReadStall = MEM_valid && MEM_RFWrite &&
+                         (MEM_WDSel == `WDSel_FromMEM);
+`endif
 
 /* ################################ WB ################################ */
 
 
 /* #################################### pipeline #################################### */
 
-Flopr #(.WIDTH(1))  U_IF_done (.clk(clk), .rst(rst), .in_data(1'b1), .out_data(IF_done));
-Flopr #(.WIDTH(32)) U_IF_PC   (.clk(clk), .rst(rst), .in_data(IF_stall ? IF_PC : (EX_branch ? IM_PC : PC))  , .out_data(IF_PC)  );
-Flopr #(.WIDTH(32)) U_IF_PCA4 (.clk(clk), .rst(rst), .in_data(IF_stall ? IF_PCA4 : (EX_branch ? NPC_taken_p4 : PCA4)), .out_data(IF_PCA4));
+FetchDecodeRegisters U_FetchDecodeRegisters (
+    .clk(clk), .rst(rst),
+    .ready(!IF_stall), .kill(pipe_flush),
+    .ex_redirect(EX_redirect), .im_pc(IM_PC),
+    .pc(PC), .pca4(PCA4), .npc_taken_p4(NPC_taken_p4),
+    .if_stage_pc(IF_stage_PC), .if_stage_pca4(IF_stage_PCA4),
+    .if_stage_valid(IF_stage_valid),
+    .raw_instruction({Funct7, rs2, rs1, Funct3, rd, opcode}),
+    .if_illegal(if_illegal), .if_access_fault(IF_access_fault),
+    .imm12(Imm12), .offset(Offset), .offset20(Offset20),
+    .rs1(rs1), .rs2(rs2), .rd(rd),
+    .if_aluop(IF_ALUOp), .if_regsel(IF_RegSel),
+    .if_alusrcb(IF_ALUSrcB), .if_wdsel(IF_WDSel),
+    .if_alusrca(IF_ALUSrcA), .if_rfwrite(IF_RFWrite),
+    .if_dmctrl(IF_DMCtrl),
+    .if_valid(IF_valid), .if_pc(IF_PC), .if_pca4(IF_PCA4),
+    .id_pca4(ID_PCA4), .id_pc(ID_PC), .id_ins(ID_ins),
+    .id_illegal(ID_illegal), .id_access_fault(ID_access_fault),
+    .id_imm12(ID_Imm12), .id_offset(ID_Offset),
+    .id_offset12(ID_Offset12), .id_offset20(ID_Offset20),
+    .id_rs1(ID_rs1), .id_rs2(ID_rs2), .id_rd(ID_rd),
+    .id_aluop(ID_ALUOp), .id_regsel(ID_Regsel),
+    .id_alusrcb(ID_ALUSrcB), .id_wdsel(ID_WDSel),
+    .id_alusrca(ID_ALUSrcA), .id_rfwrite(ID_RFWrite),
+    .id_dmctrl(ID_DMCtrl), .id_valid(ID_valid)
+);
 
-/* IF -> ID */
+DecodeExecuteRegisters U_DecodeExecuteRegisters (
+    .clk(clk), .rst(rst),
+    .ready(!(MEM_bus_wait || EX_redirect_wait)),
+    .kill(pipe_flush || IF_stall),
+    .id_imm32(Imm32), .id_pca4(ID_PCA4), .id_pc(ID_PC),
+    .id_alu_b(ID_ALU_B_sel), .id_offset(ID_Offset),
+    .id_offset20(ID_Offset20), .id_rd(ID_rd),
+    .id_aluop(ID_ALUOp), .id_regsel(ID_Regsel),
+    .id_alusrcb(ID_ALUSrcB), .id_wdsel(ID_WDSel),
+    .id_alusrca(ID_ALUSrcA), .id_rfwrite(ID_RFWrite),
+    .id_dmctrl(ID_DMCtrl), .id_valid(ID_valid),
+    .id_branch(ID_NPCOp != `NPC_PC), .id_npcop(ID_NPCOp),
+    .ex_imm32(EX_Imm32), .ex_pca4(EX_PCA4), .ex_pc(EX_PC),
+    .ex_alu_b(EX_ALU_B_sel), .ex_offset(EX_Offset),
+    .ex_offset20(EX_Offset20), .ex_rd(EX_rd),
+    .ex_aluop(EX_ALUOp), .ex_regsel(EX_Regsel),
+    .ex_alusrcb(EX_ALUSrcB), .ex_wdsel(EX_WDSel),
+    .ex_alusrca(EX_ALUSrcA), .ex_rfwrite(EX_RFWrite),
+    .ex_dmctrl(EX_DMCtrl), .ex_valid(EX_valid),
+    .ex_branch(EX_branch), .ex_npcop(EX_NPCOp)
+);
 
-Flopr #(.WIDTH(32))  U_IFID_PCA4 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 32'b0 : (IF_stall ? ID_PCA4 : IF_PCA4)), .out_data(ID_PCA4));
-Flopr #(.WIDTH(32))  U_IFID_PC   (.clk(clk), .rst(rst), .in_data(pipe_flush ? 32'b0 : (IF_stall ? ID_PC   : IF_PC  )), .out_data(ID_PC)  );
+// Kill only the faulting EX instruction. Older MEM/WB instructions may retire.
+assign EX_to_MEM_kill = EX_exception || MEM_access_fault;
 
-Flopr #(.WIDTH(12))  U_IFID_Imm12 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 12'b0 : (IF_stall ? ID_Imm12 : Imm12 )), .out_data(ID_Imm12) );
-Flopr #(.WIDTH(12))  U_IFID_Offet (.clk(clk), .rst(rst), .in_data(pipe_flush ? 12'b0 : (IF_stall ? ID_Offset : Offset)), .out_data(ID_Offset));
+ExecuteMemoryRegisters U_ExecuteMemoryRegisters (
+    .clk(clk), .rst(rst), .ready(!MEM_bus_wait),
+    .kill(EX_redirect_wait || EX_to_MEM_kill),
+    .ex_store_data(RD2_r), .ex_pca4(EX_PCA4), .ex_pc(EX_PC),
+    .ex_rd(EX_rd), .ex_wdsel(EX_WDSel),
+    .ex_rfwrite(EX_RFWrite), .ex_dmctrl(EX_DMCtrl),
+    .ex_valid(EX_valid),
+    .mem_store_data(MEM_WD), .mem_pca4(MEM_PCA4),
+    .mem_pc(MEM_PC), .mem_rd(MEM_rd), .mem_wdsel(MEM_WDSel),
+    .mem_rfwrite(MEM_RFWrite), .mem_dmctrl(MEM_DMCtrl),
+    .mem_valid(MEM_valid)
+);
 
-Flopr #(.WIDTH(5) )  U_IFID_rs1 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 5'b0 : (IF_stall ? ID_rs1 : rs1)), .out_data(ID_rs1));
-Flopr #(.WIDTH(5) )  U_IFID_rs2 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 5'b0 : (IF_stall ? ID_rs2 : rs2)), .out_data(ID_rs2));
-Flopr #(.WIDTH(5) )  U_IFID_rd  (.clk(clk), .rst(rst), .in_data(pipe_flush ? 5'b0 : (IF_stall ? ID_rd  : rd )), .out_data(ID_rd) );
-
-Flopr #(.WIDTH(4) )  U_IFID_ALUOp (.clk(clk), .rst(rst), .in_data(pipe_flush ? 4'b0 : (IF_stall ? ID_ALUOp : IF_ALUOp)), .out_data(ID_ALUOp));
-
-Flopr #(.WIDTH(2) )  U_IFID_Regsel  (.clk(clk), .rst(rst), .in_data(pipe_flush ? 2'b0 : (IF_stall ? ID_Regsel  : IF_RegSel )), .out_data(ID_Regsel) );
-Flopr #(.WIDTH(2) )  U_IFID_ALUSrcB (.clk(clk), .rst(rst), .in_data(pipe_flush ? 2'b0 : (IF_stall ? ID_ALUSrcB : IF_ALUSrcB)), .out_data(ID_ALUSrcB));
-Flopr #(.WIDTH(2) )  U_IFID_WDSel   (.clk(clk), .rst(rst), .in_data(pipe_flush ? 2'b0 : (IF_stall ? ID_WDSel   : IF_WDSel  )), .out_data(ID_WDSel)  );
-
-Flopr #(.WIDTH(1) )  U_IFID_ALUSrcA (.clk(clk), .rst(rst), .in_data(pipe_flush ? 1'b0 : (IF_stall ? ID_ALUSrcA : IF_ALUSrcA)), .out_data(ID_ALUSrcA));
-Flopr #(.WIDTH(1) )  U_IFID_RFWrite (.clk(clk), .rst(rst), .in_data(pipe_flush ? 1'b0 : (IF_stall ? ID_RFWrite : IF_RFWrite)), .out_data(ID_RFWrite));
-Flopr #(.WIDTH(1) )  U_IFID_DMCtrl  (.clk(clk), .rst(rst), .in_data(pipe_flush ? 1'b0 : (IF_stall ? ID_DMCtrl  : IF_DMCtrl )), .out_data(ID_DMCtrl) );
-
-Flopr #(.WIDTH(1) )  U_IFID_done (.clk(clk), .rst(rst), .in_data(pipe_flush ? 1'b0 : (IF_stall ? ID_done : IF_done)), .out_data(ID_done));
-
-// NPC
-Flopr #(.WIDTH(12))  U_IFID_Offset12 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 12'b0 : (IF_stall ? ID_Offset12 : Offset)), .out_data(ID_Offset12));
-Flopr #(.WIDTH(20))  U_IFID_Offset20 (.clk(clk), .rst(rst), .in_data(pipe_flush ? 20'b0 : (IF_stall ? ID_Offset20 : Offset20)), .out_data(ID_Offset20));
-
-/* ID -> EX */
-
-Flopr #(.WIDTH(32))  U_IDEX_Imm32 (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : Imm32)  , .out_data(EX_Imm32));
-Flopr #(.WIDTH(32))  U_IDEX_PCA4  (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : ID_PCA4), .out_data(EX_PCA4) );
-Flopr #(.WIDTH(32))  U_IDEX_PC    (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : ID_PC)  , .out_data(EX_PC)   );
-Flopr #(.WIDTH(32))  U_IDEX_ALU_B (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : ID_ALU_B_sel), .out_data(EX_ALU_B_sel));
-
-Flopr #(.WIDTH(12))  U_IDEX_Offset (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 12'b0 : ID_Offset), .out_data(EX_Offset));
-
-Flopr #(.WIDTH(5) )  U_IDEX_rd (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 5'b0 : ID_rd), .out_data(EX_rd));
-
-Flopr #(.WIDTH(4) )  U_IDEX_ALUOp (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 4'b0 : ID_ALUOp), .out_data(EX_ALUOp));
-
-Flopr #(.WIDTH(2) )  U_IDEX_Regsel  (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 2'b0 : ID_Regsel) , .out_data(EX_Regsel) );
-Flopr #(.WIDTH(2) )  U_IDEX_ALUSrcB (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 2'b0 : ID_ALUSrcB), .out_data(EX_ALUSrcB));
-Flopr #(.WIDTH(2) )  U_IDEX_WDSel   (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 2'b0 : ID_WDSel)  , .out_data(EX_WDSel)  );
-
-Flopr #(.WIDTH(1) )  U_IDEX_ALUSrcA (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 1'b0 : ID_ALUSrcA), .out_data(EX_ALUSrcA));
-Flopr #(.WIDTH(1) )  U_IDEX_RFWrite (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 1'b0 : ID_RFWrite), .out_data(EX_RFWrite));
-Flopr #(.WIDTH(1) )  U_IDEX_DMCtrl  (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 1'b0 : ID_DMCtrl) , .out_data(EX_DMCtrl) );
-
-Flopr #(.WIDTH(20))  U_IDEX_Offset20 (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 20'b0 : ID_Offset20), .out_data(EX_Offset20));
-
-Flopr #(.WIDTH(1) )  U_IDEX_done (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 1'b0 : ID_done), .out_data(EX_done));
-
-/* EX -> MEM */
-
-Flopr #(.WIDTH(32)) U_EXMEM_WD   (.clk(clk), .rst(rst), .in_data(RD2_r)  , .out_data(MEM_WD)  );
-Flopr #(.WIDTH(32)) U_EXMEM_PCA4 (.clk(clk), .rst(rst), .in_data(EX_PCA4), .out_data(MEM_PCA4));
-
-Flopr #(.WIDTH(5))  U_EXMEM_rd    (.clk(clk), .rst(rst), .in_data(EX_rd)   , .out_data(MEM_rd)   );
-
-Flopr #(.WIDTH(2))  U_EXMEM_WDSel (.clk(clk), .rst(rst), .in_data(EX_WDSel), .out_data(MEM_WDSel));
-
-Flopr #(.WIDTH(1))  U_EXMEM_RFWrite (.clk(clk), .rst(rst), .in_data(EX_RFWrite), .out_data(MEM_RFWrite));
-Flopr #(.WIDTH(1))  U_EXMEM_DMCtrl  (.clk(clk), .rst(rst), .in_data(EX_DMCtrl) , .out_data(MEM_DMCtrl) );
-
-Flopr #(.WIDTH(1))  U_EXMEM (.clk(clk), .rst(rst), .in_data(EX_done), .out_data(MEM_done));
-
-/* MEM -> WB */
-
-Flopr #(.WIDTH(32)) U_MEMWB_WD (.clk(clk), .rst(rst), .in_data(WD), .out_data(WB_WD));
-
-Flopr #(.WIDTH(5) ) U_MEMWB_rd (.clk(clk), .rst(rst), .in_data(MEMStall_stall ? MEMStall_rd : MEM_rd), .out_data(WB_rd));
-
-Flopr #(.WIDTH(1) ) U_MEMWB_RFWrite (.clk(clk), .rst(rst), .in_data(MEM_DMReadStall ? 1'b0 : MEMStall_stall ? MEMStall_RFWrite : MEM_RFWrite), .out_data(WB_RFWrite));
-
-Flopr #(.WIDTH(1) ) U_MEMWB_done (.clk(clk), .rst(rst), .in_data(MEM_DMReadStall ? 1'b0 : MEMStall_stall ? MEMStall_done : MEM_done), .out_data(WB_done));
-
-/* MEM stall for MEM read (lw) */
-
-Flopr #(.WIDTH(5) ) U_MEMstall_rd      (.clk(clk), .rst(rst), .in_data(MEM_DMReadStall ? MEM_rd      : 5'b0), .out_data(MEMStall_rd)     );
-Flopr #(.WIDTH(2) ) U_MEMstall_WDSel   (.clk(clk), .rst(rst), .in_data(MEM_DMReadStall ? MEM_WDSel   : 2'b0), .out_data(MEMStall_WDSel)  );
-Flopr #(.WIDTH(1) ) U_MEMstall_RFWrite (.clk(clk), .rst(rst), .in_data(MEM_DMReadStall ? MEM_RFWrite : 1'b0), .out_data(MEMStall_RFWrite));
-Flopr #(.WIDTH(1) ) U_MEMstall_done    (.clk(clk), .rst(rst), .in_data(MEM_DMReadStall ? MEM_done    : 1'b0), .out_data(MEMStall_done)   );
-
-Flopr #(.WIDTH(1) ) U_MEMstall_stall   (.clk(clk), .rst(rst), .in_data(MEM_DMReadStall), .out_data(MEMStall_stall));
+MemoryWritebackRegisters U_MemoryWritebackRegisters (
+    .clk(clk), .rst(rst),
+    .ready(!MEM_bus_wait), .kill(MEM_access_fault),
+    .mem_writeback_data(WD),
+    .mem_rd(MEM_rd), .mem_wdsel(MEM_WDSel),
+    .mem_rfwrite(MEM_RFWrite), .mem_valid(MEM_valid),
+    .mem_dmread_stall(MEM_DMReadStall),
+    .wb_data(WB_WD), .wb_rd(WB_rd),
+    .wb_rfwrite(WB_RFWrite), .wb_valid(WB_valid),
+    .memstall_rd(MEMStall_rd), .memstall_wdsel(MEMStall_WDSel),
+    .memstall_rfwrite(MEMStall_RFWrite),
+    .memstall_valid(MEMStall_valid)
+);
 
 `ifdef DIFFTEST
 
-wire [31:0] ID_dnpc, EX_dnpc, MEM_dnpc, MEMStall_dnpc, WB_dnpc, dnpc;
+reg [31:0] ID_dnpc, EX_dnpc, MEM_dnpc, MEMStall_dnpc, WB_dnpc, dnpc;
 
-Flopr #(.WIDTH(32)) U_IFID_dnpc     (.clk(clk), .rst(rst), .in_data(pipe_flush ? 32'b0 : (IF_stall ? ID_dnpc : IF_PCA4)), .out_data(ID_dnpc)      );
-Flopr #(.WIDTH(32)) U_IDEX_dnpc     (.clk(clk), .rst(rst), .in_data((pipe_flush || IF_stall) ? 32'b0 : ID_dnpc)         , .out_data(EX_dnpc)      );
-Flopr #(.WIDTH(32)) U_EXMEM_dnpc    (.clk(clk), .rst(rst), .in_data(EX_branch ? NPC_NPC : EX_dnpc)            , .out_data(MEM_dnpc)     );
-Flopr #(.WIDTH(32)) U_MEMstall_dnpc (.clk(clk), .rst(rst), .in_data(MEM_dnpc)                                 , .out_data(MEMStall_dnpc));
-Flopr #(.WIDTH(32)) U_MEMWB_dnpc    (.clk(clk), .rst(rst), .in_data(MEMStall_stall ? MEMStall_dnpc : MEM_dnpc), .out_data(WB_dnpc)      );
-Flopr #(.WIDTH(32)) U_WB_dnpc       (.clk(clk), .rst(rst), .in_data(WB_dnpc)                                  , .out_data(dnpc)         );
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        ID_dnpc       <= 32'b0;
+        EX_dnpc       <= 32'b0;
+        MEM_dnpc      <= 32'b0;
+        MEMStall_dnpc <= 32'b0;
+        WB_dnpc       <= 32'b0;
+        dnpc          <= 32'b0;
+    end
+    else begin
+        if (pipe_flush)
+            ID_dnpc <= 32'b0;
+        else if (!IF_stall)
+            ID_dnpc <= IF_stage_PCA4;
+
+        if (!(MEM_bus_wait || EX_redirect_wait)) begin
+            if (pipe_flush || IF_stall)
+                EX_dnpc <= 32'b0;
+            else
+                EX_dnpc <= ID_dnpc;
+        end
+
+        if (!MEM_bus_wait) begin
+            if (EX_redirect_wait || EX_to_MEM_kill)
+                MEM_dnpc <= 32'b0;
+            else
+                MEM_dnpc <= EX_redirect ? NPC_NPC : EX_dnpc;
+        end
+
+        if (!MEM_bus_wait && !MEM_access_fault &&
+            MEM_DMReadStall && MEM_valid)
+            MEMStall_dnpc <= MEM_dnpc;
+        else
+            MEMStall_dnpc <= 32'b0;
+
+        if (MEM_bus_wait || MEM_access_fault || MEM_DMReadStall)
+            WB_dnpc <= 32'b0;
+        else if (MEMStall_valid)
+            WB_dnpc <= MEMStall_dnpc;
+        else
+            WB_dnpc <= MEM_dnpc;
+
+        dnpc <= WB_dnpc;
+    end
+end
 
 export "DPI-C" function DPI_getPC;
 function int DPI_getPC();

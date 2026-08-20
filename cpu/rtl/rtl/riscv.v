@@ -2,25 +2,31 @@
 
 
 //////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
+// Company:
+// Engineer:
+//
 // Create Date: 2024/11/22 13:30:25
-// Design Name: 
+// Design Name:
 // Module Name: riscv
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
+// Project Name:
+// Target Devices:
+// Tool Versions:
+// Description:
+//
+// Dependencies:
+//
 // Revision:
 // Revision 0.01 - File Created
 // Additional Comments:
-// 
+//
 //////////////////////////////////////////////////////////////////////////////////
-module riscv(clk, rst, RD, out_ins
+module riscv(clk, rst, RD, out_ins, trap, trap_cause, trap_epc, trap_tval
+`ifdef WISHBONE
+, iwb_adr_o, iwb_dat_o, iwb_dat_i, iwb_sel_o, iwb_we_o,
+  iwb_cyc_o, iwb_stb_o, iwb_ack_i, iwb_err_i,
+  dwb_adr_o, dwb_dat_o, dwb_dat_i, dwb_sel_o, dwb_we_o,
+  dwb_cyc_o, dwb_stb_o, dwb_ack_i, dwb_err_i
+`endif
 `ifdef DIFFTEST
 , done
 `endif
@@ -28,6 +34,31 @@ module riscv(clk, rst, RD, out_ins
 input clk, rst;
 output [31:0] RD;
 output [31:0] out_ins;
+output trap;
+output [3:0] trap_cause;
+output [31:0] trap_epc;
+output [31:0] trap_tval;
+
+`ifdef WISHBONE
+output [31:0] iwb_adr_o;
+output [31:0] iwb_dat_o;
+input  [31:0] iwb_dat_i;
+output [3:0]  iwb_sel_o;
+output        iwb_we_o;
+output        iwb_cyc_o;
+output        iwb_stb_o;
+input         iwb_ack_i;
+input         iwb_err_i;
+output [31:0] dwb_adr_o;
+output [31:0] dwb_dat_o;
+input  [31:0] dwb_dat_i;
+output [3:0]  dwb_sel_o;
+output        dwb_we_o;
+output        dwb_cyc_o;
+output        dwb_stb_o;
+input         dwb_ack_i;
+input         dwb_err_i;
+`endif
 
 `ifdef DIFFTEST
 output done;
@@ -70,6 +101,12 @@ wire [31:0] MUX_PCA4;
 wire [31:0] DM_WD;
 wire [31:0] NPC_taken_p4;
 wire [4:0]  RF_RR1, RF_RR2;
+wire IF_ready, IF_error, DM_ready, DM_error;
+wire DMReq, mem_hold;
+`ifdef WISHBONE
+wire iwb_req_ready;
+wire dwb_req_ready;
+`endif
 
 assign opcode  = out_ins[6:0];
 assign Funct3  = out_ins[14:12];
@@ -108,10 +145,13 @@ ControlUnit U_ControlUnit(
     .WD(WD),
     // from Flopr_B
     .RD2_r(RD2_r),
+    // external memory completion
+    .IF_ready(IF_ready), .IF_error(IF_error),
+    .DM_ready(DM_ready), .DM_error(DM_error),
 
     /* new outputs */
     // control signals
-    .stall(stall), .branch(branch),
+    .stall(stall), .mem_hold(mem_hold), .branch(branch),
     // to fetch control
     .PC_NPC(PC_NPC), .NPC_PC(NPC_PC), .FETCH_PC(FETCH_PC),
     // to NPC
@@ -127,7 +167,9 @@ ControlUnit U_ControlUnit(
     // to MUX_3to1_LMD
     .MUX_PCA4(MUX_PCA4),
     // to DM
-    .DM_WD(DM_WD)
+    .DM_WD(DM_WD), .DMReq(DMReq),
+    // minimal synchronous exception interface
+    .trap(trap), .trap_cause(trap_cause), .trap_epc(trap_epc), .trap_tval(trap_tval)
 
 
 `ifdef DIFFTEST
@@ -154,13 +196,30 @@ NPC U_NPC (
     .NPC_taken_p4(NPC_taken_p4)
 );
 
-// ÊuÀý»- IM
+`ifdef WISHBONE
+WishboneMaster U_InstructionWishboneMaster (
+    .clk(clk), .rst(rst),
+    .req_valid(InsMemRW), .req_ready(iwb_req_ready),
+    .req_addr(PC), .req_wdata(32'b0),
+    .req_sel(4'b1111), .req_we(1'b0),
+    .rsp_valid(IF_ready), .rsp_error(IF_error), .rsp_rdata(in_ins),
+    .wb_adr_o(iwb_adr_o), .wb_dat_o(iwb_dat_o), .wb_dat_i(iwb_dat_i),
+    .wb_sel_o(iwb_sel_o), .wb_we_o(iwb_we_o),
+    .wb_cyc_o(iwb_cyc_o), .wb_stb_o(iwb_stb_o),
+    .wb_ack_i(iwb_ack_i), .wb_err_i(iwb_err_i)
+);
+`else
+assign IF_ready = 1'b1;
+assign IF_error = 1'b0;
+
+// Internal instruction memory used by the existing simulator.
 IM U_IM (
     .addr(PC[11:2]), .Ins(in_ins), .InsMemRW(InsMemRW),
 
     /* new inputs */
     .clk(clk), .rst(rst), .IM_addr(IM_addr), .branch(branch)
 );
+`endif
 
 // ÊuÀý»- IR
 IR U_IR (
@@ -196,12 +255,12 @@ MUX_3to1_LMD U_MUX_3to1_LMD (
 
 // ÊuÀý»- Flopr
 Flopr U_A (
-    .clk(clk), .rst(rst), .in_data(RD1), .out_data(RD1_r)
+    .clk(clk), .rst(rst), .in_data(mem_hold ? RD1_r : RD1), .out_data(RD1_r)
 );
 
 // ÊuÀý»- Flopr
 Flopr U_B (
-    .clk(clk), .rst(rst), .in_data(RD2), .out_data(RD2_r)
+    .clk(clk), .rst(rst), .in_data(mem_hold ? RD2_r : RD2), .out_data(RD2_r)
 );
 
 // ÊuÀý»- EXT
@@ -232,10 +291,29 @@ ALU U_ALU (
 
 // ÊuÀý»- Flopr
 Flopr U_ALUOut (
-    .clk(clk), .rst(rst), .in_data(ALU_result), .out_data(ALU_result_r)
+    .clk(clk), .rst(rst),
+    .in_data(mem_hold ? ALU_result_r : ALU_result),
+    .out_data(ALU_result_r)
 );
 
-// ÊuÀý»- DM
+`ifdef WISHBONE
+WishboneMaster U_DataWishboneMaster (
+    .clk(clk), .rst(rst),
+    .req_valid(DMReq), .req_ready(dwb_req_ready),
+    .req_addr(ALU_result_r), .req_wdata(DM_WD),
+    .req_sel(4'b1111), .req_we(DMCtrl),
+    .rsp_valid(DM_ready), .rsp_error(DM_error), .rsp_rdata(DR_out),
+    .wb_adr_o(dwb_adr_o), .wb_dat_o(dwb_dat_o), .wb_dat_i(dwb_dat_i),
+    .wb_sel_o(dwb_sel_o), .wb_we_o(dwb_we_o),
+    .wb_cyc_o(dwb_cyc_o), .wb_stb_o(dwb_stb_o),
+    .wb_ack_i(dwb_ack_i), .wb_err_i(dwb_err_i)
+);
+assign RD = DR_out;
+`else
+assign DM_ready = 1'b1;
+assign DM_error = 1'b0;
+
+// Internal data memory used by the existing simulator.
 DM U_DM (
     .Addr(ALU_result_r[11:2]), .WD(RD2_r), .DMCtrl(DMCtrl), .clk(clk), .RD(RD),
 
@@ -249,6 +327,7 @@ DM U_DM (
 //);
 
 assign DR_out = RD;
+`endif
 
 
 endmodule
