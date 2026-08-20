@@ -43,3 +43,13 @@
 // DM control signal
 `define DMCtrl_RD    1'b0
 `define DMCtrl_WR    1'b1
+
+// RISC-V synchronous exception cause codes used by the minimal trap interface.
+`define TRAP_INST_ADDR_MISALIGNED 4'd0
+`define TRAP_INST_ACCESS_FAULT    4'd1
+`define TRAP_ILLEGAL_INSTRUCTION  4'd2
+`define TRAP_BREAKPOINT           4'd3
+`define TRAP_LOAD_ADDR_MISALIGNED 4'd4
+`define TRAP_LOAD_ACCESS_FAULT    4'd5
+`define TRAP_STORE_ADDR_MISALIGNED 4'd6
+`define TRAP_STORE_ACCESS_FAULT   4'd7
