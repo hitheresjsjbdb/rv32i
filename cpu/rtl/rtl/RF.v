@@ -11,13 +11,10 @@ input clk,
 output [31:0] RD1,
 output [31:0] RD2,
 
-input [4:0] RF_RR1,
-input [4:0] RF_RR2,
 input forward1,
 input forward2,
 input [31:0] FD1,  // forward data
-input [31:0] FD2,
-input [31:0] RF_WD
+input [31:0] FD2
 );
 
 reg [31:0] register [0:31];
@@ -25,7 +22,7 @@ reg [31:0] register [0:31];
 always @(posedge clk) begin
   register[0] <= 32'h0;
   if ((WR != 0) && (RFWrite == 1)) begin
-    register[WR] <= RF_WD;
+    register[WR] <= WD;
 `ifdef DEBUG
     $display("R[00-07]=%8X %8X %8X %8X %8X %8X %8X %8X", 0, register[1], register[2], register[3], register[4], register[5], register[6], register[7]);
     $display("R[08-15]=%8X %8X %8X %8X %8X %8X %8X %8X", register[8], register[9], register[10], register[11], register[12], register[13], register[14], register[15]);
@@ -35,8 +32,8 @@ always @(posedge clk) begin
   end
 end
 
-assign RD1 = forward1 ? FD1 : register[RF_RR1];
-assign RD2 = forward2 ? FD2 : register[RF_RR2];
+assign RD1 = forward1 ? FD1 : register[RR1];
+assign RD2 = forward2 ? FD2 : register[RR2];
 
 `ifdef DIFFTEST
 

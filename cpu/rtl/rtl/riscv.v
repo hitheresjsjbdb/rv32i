@@ -64,9 +64,8 @@ input         dwb_err_i;
 output done;
 `endif
 
-wire RFWrite, DMCtrl, PCWrite, IRWrite, InsMemRW, ExtSel, zero, ALUSrcA;
-wire [1:0] ALUSrcB;
-wire [1:0] NPCOp, WDSel, RegSel;
+wire RFWrite, DMCtrl, PCWrite, InsMemRW;
+wire [1:0] NPCOp;
 wire [3:0] ALUOp;
 wire [6:0] opcode;
 wire [2:0] Funct3;
@@ -75,38 +74,61 @@ wire [31:0] PC, NPC, PCA4;
 wire [31:0] in_ins, DR_out;
 wire [4:0] rs1, rs2, rd;
 wire [11:0] Imm12;
-wire [31:0] Imm32;
 wire [20:1] Offset20;
 wire [11:0] Offset;
 wire [4:0] WR;
-wire [31:0] WD;
 wire [31:0] RD1, RD1_r, RD2, RD2_r;
 wire [31:0] A, B, ALU_result, ALU_result_r;
 
-/* new wires */
-wire stall;
-wire branch;
+/* pipeline interconnect */
 wire [31:0] PC_NPC, NPC_PC;
 wire [31:0] FETCH_PC;
+wire        ICache_mem_req;
+wire [31:0] ICache_mem_addr;
+wire        ICache_mem_ready;
+wire        ICache_mem_error;
+wire [31:0] ICache_mem_data;
 wire [19:0] NPC_EX_Offset20;
 wire [11:0] NPC_EX_Offset12;
-wire [9:0]  IM_addr;
-wire [11:0] EXT_Imm12;
-wire [4:0]  MUX_rd;
+wire [4:0]  WB_rd;
 wire forward1, forward2;
 wire [31:0] FD1, FD2;
-wire [31:0] ALU_B_Imm32;
+wire [31:0] EX_ALU_B;
 wire [31:0] RF_WD;
-wire [31:0] MUX_PCA4;
 wire [31:0] DM_WD;
 wire [31:0] NPC_taken_p4;
-wire [4:0]  RF_RR1, RF_RR2;
+wire [4:0]  ID_rs1, ID_rs2;
 wire IF_ready, IF_error, DM_ready, DM_error;
-wire DMReq, mem_hold;
-`ifdef WISHBONE
-wire iwb_req_ready;
-wire dwb_req_ready;
-`endif
+wire mem_hold;
+wire DMReq;
+
+wire [31:0] im_adr;
+wire [31:0] im_dat_o;
+wire [31:0] im_dat_i;
+wire [3:0]  im_sel;
+wire        im_we;
+wire        im_cyc;
+wire        im_stb;
+wire        im_ack;
+wire        im_err;
+wire        im_local;
+wire [31:0] im_local_data;
+wire        im_local_ack;
+wire        im_local_err;
+
+wire [31:0] dm_adr;
+wire [31:0] dm_dat_o;
+wire [31:0] dm_dat_i;
+wire [3:0]  dm_sel;
+wire        dm_we;
+wire        dm_cyc;
+wire        dm_stb;
+wire        dm_ack;
+wire        dm_err;
+wire        dm_local;
+wire [31:0] dm_local_data;
+wire        dm_local_ack;
+wire        dm_local_err;
 
 assign opcode  = out_ins[6:0];
 assign Funct3  = out_ins[14:12];
@@ -118,57 +140,32 @@ assign Imm12   = out_ins[31:20];
 assign Offset20 = {out_ins[31],out_ins[19:12],out_ins[20],out_ins[30:21]};
 assign Offset  = (opcode == `INSTR_BTYPE_OP) ? {out_ins[31],out_ins[7],out_ins[30:25],out_ins[11:8]} :
                  (opcode == `INSTR_SW_OP)  ? {out_ins[31:25],out_ins[11:7]} : Imm12;
-assign IM_addr = FETCH_PC[11:2];
 
-// ÊuÀý»- ControlUnit
 ControlUnit U_ControlUnit(
-    .clk(clk), .rst(rst), .zero(zero), .opcode(opcode), .Funct7(Funct7), .Funct3(Funct3),
-    .RFWrite(RFWrite), .DMCtrl(DMCtrl), .PCWrite(PCWrite), .IRWrite(IRWrite), .InsMemRW(InsMemRW),
-    .ExtSel(ExtSel), .ALUOp(ALUOp), .NPCOp(NPCOp), .ALUSrcA(ALUSrcA),
-    .WDSel(WDSel), .ALUSrcB(ALUSrcB), .RegSel(RegSel),
+    .clk(clk), .rst(rst), .opcode(opcode), .Funct7(Funct7), .Funct3(Funct3),
+    .RFWrite(RFWrite), .DMCtrl(DMCtrl), .PCWrite(PCWrite), .InsMemRW(InsMemRW),
+    .ALUOp(ALUOp), .NPCOp(NPCOp),
 
-    /* new inputs */
-    // decode signals
     .rs1(rs1), .rs2(rs2), .rd(rd), .Imm12(Imm12), .Offset(Offset),
     .Offset20(Offset20),
-    // from PC
     .PC(PC), .PCA4(PCA4),
-    // from NPC
     .NPC(NPC), .NPC_taken_p4(NPC_taken_p4),
-    // from RF
     .RD1(RD1), .RD2(RD2),
-    // from EXT
-    .Imm32(Imm32),
-    // from ALU
     .ALU_result(ALU_result), .ALU_result_r(ALU_result_r),
-    // from MUX_3to1_LMD
-    .WD(WD),
-    // from Flopr_B
+    .DM_RD(DR_out),
     .RD2_r(RD2_r),
-    // external memory completion
     .IF_ready(IF_ready), .IF_error(IF_error),
     .DM_ready(DM_ready), .DM_error(DM_error),
 
-    /* new outputs */
-    // control signals
-    .stall(stall), .mem_hold(mem_hold), .branch(branch),
-    // to fetch control
-    .PC_NPC(PC_NPC), .NPC_PC(NPC_PC), .FETCH_PC(FETCH_PC),
-    // to NPC
+    .mem_hold(mem_hold),
+    .PC_NPC(PC_NPC), .NPC_PC(NPC_PC),
+    .FETCH_PC(FETCH_PC),
     .NPC_EX_Offset12(NPC_EX_Offset12), .NPC_EX_Offset20(NPC_EX_Offset20),
-    // to EXT
-    .EXT_ID_Imm12(EXT_Imm12),
-    // to MUX_3to1
-    .MUX_WB_rd(MUX_rd),
-    // to RF
-    .forward1(forward1), .forward2(forward2), .FD1(FD1), .FD2(FD2), .RF_WD(RF_WD), .RF_RR1(RF_RR1), .RF_RR2(RF_RR2),
-    // to MUX_3to1_B
-    .ALU_B_Imm(ALU_B_Imm32),
-    // to MUX_3to1_LMD
-    .MUX_PCA4(MUX_PCA4),
-    // to DM
-    .DM_WD(DM_WD), .DMReq(DMReq),
-    // minimal synchronous exception interface
+    .WB_rd_out(WB_rd),
+    .forward1(forward1), .forward2(forward2), .FD1(FD1), .FD2(FD2),
+    .RF_WD(RF_WD), .ID_rs1_out(ID_rs1), .ID_rs2_out(ID_rs2),
+    .EX_ALU_B(EX_ALU_B), .DM_WD(DM_WD),
+    .DMReq(DMReq),
     .trap(trap), .trap_cause(trap_cause), .trap_epc(trap_epc), .trap_tval(trap_tval)
 
 
@@ -179,155 +176,139 @@ ControlUnit U_ControlUnit(
 
 );
 
-// ÊuÀý»- PC
 PC U_PC (
-    .clk(clk), .rst(rst), .PCWrite(PCWrite), .NPC(NPC), .PC(PC),
-
-    /* new inputs */
-    .stall(stall), .branch(branch), .PC_NPC(PC_NPC)
+    .clk(clk), .rst(rst), .write_enable(PCWrite),
+    .next_pc(PC_NPC), .pc(PC)
 );
 
-// ÊuÀý»- NPC
 NPC U_NPC (
-    .PC(PC), .NPCOp(NPCOp), .Offset12(Offset), .Offset20(Offset20), .rs(RD1), .PCA4(PCA4), .NPC(NPC),
-
-    /* new inputs */
+    .PC(PC), .NPCOp(NPCOp), .PCA4(PCA4), .NPC(NPC),
     .NPC_PC(NPC_PC), .NPC_Offset12(NPC_EX_Offset12), .NPC_Offset20(NPC_EX_Offset20), .NPC_rs(RD1_r),
     .NPC_taken_p4(NPC_taken_p4)
 );
 
-`ifdef WISHBONE
-WishboneMaster U_InstructionWishboneMaster (
+InstructionCache U_InstructionCache (
     .clk(clk), .rst(rst),
-    .req_valid(InsMemRW), .req_ready(iwb_req_ready),
-    .req_addr(PC), .req_wdata(32'b0),
+    .req_valid(InsMemRW), .req_addr(FETCH_PC),
+    .rsp_valid(IF_ready), .rsp_error(IF_error), .rsp_data(in_ins),
+    .mem_req(ICache_mem_req), .mem_addr(ICache_mem_addr),
+    .mem_ready(ICache_mem_ready), .mem_error(ICache_mem_error),
+    .mem_rdata(ICache_mem_data)
+);
+
+WishboneMaster U_InstructionWishboneMaster (
+    .req_valid(ICache_mem_req),
+    .req_addr(ICache_mem_addr), .req_wdata(32'b0),
     .req_sel(4'b1111), .req_we(1'b0),
-    .rsp_valid(IF_ready), .rsp_error(IF_error), .rsp_rdata(in_ins),
-    .wb_adr_o(iwb_adr_o), .wb_dat_o(iwb_dat_o), .wb_dat_i(iwb_dat_i),
-    .wb_sel_o(iwb_sel_o), .wb_we_o(iwb_we_o),
-    .wb_cyc_o(iwb_cyc_o), .wb_stb_o(iwb_stb_o),
-    .wb_ack_i(iwb_ack_i), .wb_err_i(iwb_err_i)
+    .rsp_valid(ICache_mem_ready), .rsp_error(ICache_mem_error),
+    .rsp_rdata(ICache_mem_data),
+    .wb_adr_o(im_adr), .wb_dat_o(im_dat_o), .wb_dat_i(im_dat_i),
+    .wb_sel_o(im_sel), .wb_we_o(im_we),
+    .wb_cyc_o(im_cyc), .wb_stb_o(im_stb),
+    .wb_ack_i(im_ack), .wb_err_i(im_err)
 );
+
+// 0x0000_2000-0x0000_2fff is the local instruction SRAM window.
+assign im_local = (im_adr[31:12] == 20'h00002);
+
+WishboneInstructionMemory U_InstructionMemorySlave (
+    .clk(clk), .rst(rst),
+    .wb_adr_i(im_adr),
+    .wb_cyc_i(im_cyc && im_local), .wb_stb_i(im_stb && im_local),
+    .wb_dat_o(im_local_data), .wb_ack_o(im_local_ack),
+    .wb_err_o(im_local_err)
+);
+
+assign im_dat_i = im_local ? im_local_data :
+`ifdef WISHBONE
+                  iwb_dat_i;
+assign im_ack   = im_local ? im_local_ack : iwb_ack_i;
+assign im_err   = im_local ? im_local_err : iwb_err_i;
+assign iwb_adr_o = im_adr;
+assign iwb_dat_o = im_dat_o;
+assign iwb_sel_o = im_sel;
+assign iwb_we_o  = im_we;
+assign iwb_cyc_o = im_cyc && !im_local;
+assign iwb_stb_o = im_stb && !im_local;
 `else
-assign IF_ready = 1'b1;
-assign IF_error = 1'b0;
-
-// Internal instruction memory used by the existing simulator.
-IM U_IM (
-    .addr(PC[11:2]), .Ins(in_ins), .InsMemRW(InsMemRW),
-
-    /* new inputs */
-    .clk(clk), .rst(rst), .IM_addr(IM_addr), .branch(branch)
-);
+                  32'b0;
+assign im_ack   = im_local ? im_local_ack : 1'b0;
+assign im_err   = im_local ? im_local_err : (im_cyc && im_stb);
 `endif
 
-// ÊuÀý»- IR
-IR U_IR (
-    .IRWrite(IRWrite), .in_ins(in_ins), .out_ins(out_ins)
-);
+assign out_ins = in_ins;
 
-// ÊuÀý»- RF
 RF U_RF (
-    .RR1(rs1), .RR2(rs2), .WR(WR), .WD(WD), .clk(clk),
+    .RR1(ID_rs1), .RR2(ID_rs2), .WR(WR), .WD(RF_WD), .clk(clk),
     .RFWrite(RFWrite), .RD1(RD1), .RD2(RD2),
-
-    /* new inputs */
-    .RF_RR1(RF_RR1), .RF_RR2(RF_RR2),
     .forward1(forward1), .forward2(forward2),
-    .FD1(FD1), .FD2(FD2),
-    .RF_WD(RF_WD)
+    .FD1(FD1), .FD2(FD2)
 );
 
-// ÊuÀý»- MUX_3to1
-MUX_3to1 U_MUX_3to1 (
-    .X(rd), .Y(5'd0), .Z(5'd31), .rd(MUX_rd),
-    .control(RegSel), .out(WR)
-);
+assign WR = WB_rd;
 
-// ÊuÀý»- MUX_3to1_LMD
-MUX_3to1_LMD U_MUX_3to1_LMD (
-    .X(ALU_result_r), .Y(DR_out), .Z(PCA4),
-    .control(WDSel), .out(WD),
-
-    /* new inputs */
-    .PCA4(MUX_PCA4)
-);
-
-// ÊuÀý»- Flopr
 Flopr U_A (
     .clk(clk), .rst(rst), .in_data(mem_hold ? RD1_r : RD1), .out_data(RD1_r)
 );
 
-// ÊuÀý»- Flopr
 Flopr U_B (
     .clk(clk), .rst(rst), .in_data(mem_hold ? RD2_r : RD2), .out_data(RD2_r)
 );
 
-// ÊuÀý»- EXT
-EXT U_EXT (
-    .imm_in(Imm12), .ExtSel(ExtSel), .imm_out(Imm32),
+assign A = RD1_r;
+assign B = EX_ALU_B;
 
-    /* new input */
-    .EXT_Imm12(EXT_Imm12)
-);
-
-// ÊuÀý»- MUX_2to1_A
-MUX_2to1_A U_MUX_2to1_A (
-    .X(RD1_r), .Y(5'h0), .control(ALUSrcA), .out(A)
-);
-
-// ÊuÀý»- MUX_2to1_B
-MUX_3to1_B U_MUX_3to1_B (
-    .X(RD2_r), .Y(Imm32), .Z(Offset), .control(ALUSrcB), .out(B),
-
-    /* new inputs */
-    .Imm(ALU_B_Imm32), .Offset(NPC_EX_Offset12)
-);
-
-// ÊuÀý»- ALU
 ALU U_ALU (
-    .A(A), .B(B), .ALUOp(ALUOp), .ALU_result(ALU_result), .zero(zero)
+    .A(A), .B(B), .ALUOp(ALUOp), .ALU_result(ALU_result)
 );
 
-// ÊuÀý»- Flopr
 Flopr U_ALUOut (
     .clk(clk), .rst(rst),
     .in_data(mem_hold ? ALU_result_r : ALU_result),
     .out_data(ALU_result_r)
 );
 
-`ifdef WISHBONE
 WishboneMaster U_DataWishboneMaster (
-    .clk(clk), .rst(rst),
-    .req_valid(DMReq), .req_ready(dwb_req_ready),
+    .req_valid(DMReq),
     .req_addr(ALU_result_r), .req_wdata(DM_WD),
     .req_sel(4'b1111), .req_we(DMCtrl),
     .rsp_valid(DM_ready), .rsp_error(DM_error), .rsp_rdata(DR_out),
-    .wb_adr_o(dwb_adr_o), .wb_dat_o(dwb_dat_o), .wb_dat_i(dwb_dat_i),
-    .wb_sel_o(dwb_sel_o), .wb_we_o(dwb_we_o),
-    .wb_cyc_o(dwb_cyc_o), .wb_stb_o(dwb_stb_o),
-    .wb_ack_i(dwb_ack_i), .wb_err_i(dwb_err_i)
+    .wb_adr_o(dm_adr), .wb_dat_o(dm_dat_o), .wb_dat_i(dm_dat_i),
+    .wb_sel_o(dm_sel), .wb_we_o(dm_we),
+    .wb_cyc_o(dm_cyc), .wb_stb_o(dm_stb),
+    .wb_ack_i(dm_ack), .wb_err_i(dm_err)
 );
-assign RD = DR_out;
+
+// 0x0000_0000-0x0000_0fff is the local data SRAM window.
+assign dm_local = (dm_adr[31:12] == 20'h00000);
+
+WishboneDataMemory U_DataMemorySlave (
+    .clk(clk), .rst(rst),
+    .wb_adr_i(dm_adr), .wb_dat_i(dm_dat_o), .wb_sel_i(dm_sel),
+    .wb_we_i(dm_we), .wb_cyc_i(dm_cyc && dm_local),
+    .wb_stb_i(dm_stb && dm_local),
+    .wb_dat_o(dm_local_data), .wb_ack_o(dm_local_ack),
+    .wb_err_o(dm_local_err)
+);
+
+assign dm_dat_i = dm_local ? dm_local_data :
+`ifdef WISHBONE
+                  dwb_dat_i;
+assign dm_ack   = dm_local ? dm_local_ack : dwb_ack_i;
+assign dm_err   = dm_local ? dm_local_err : dwb_err_i;
+assign dwb_adr_o = dm_adr;
+assign dwb_dat_o = dm_dat_o;
+assign dwb_sel_o = dm_sel;
+assign dwb_we_o  = dm_we;
+assign dwb_cyc_o = dm_cyc && !dm_local;
+assign dwb_stb_o = dm_stb && !dm_local;
 `else
-assign DM_ready = 1'b1;
-assign DM_error = 1'b0;
-
-// Internal data memory used by the existing simulator.
-DM U_DM (
-    .Addr(ALU_result_r[11:2]), .WD(RD2_r), .DMCtrl(DMCtrl), .clk(clk), .RD(RD),
-
-    /* new inputs */
-    .DM_WD(DM_WD)
-);
-
-//// ÊuÀý»- Flopr
-//Flopr U_DR (
-//    .clk(clk), .rst(rst), .in_data(RD), .out_data(DR_out)
-//);
-
-assign DR_out = RD;
+                  32'b0;
+assign dm_ack   = dm_local ? dm_local_ack : 1'b0;
+assign dm_err   = dm_local ? dm_local_err : (dm_cyc && dm_stb);
 `endif
+
+assign RD = DR_out;
 
 
 endmodule

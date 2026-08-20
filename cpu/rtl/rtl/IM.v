@@ -1,38 +1,35 @@
 `timescale 1ns / 1ps
-`include "ctrl_signal_def.v"
-module IM(clk, rst, InsMemRW, addr,Ins, IM_addr, branch);
+module IM(clk, rst, enable, addr, data);
     input           clk;
-    input           InsMemRW;
-    input   [11:2]  addr;
     input           rst;
-    output reg [31:0] Ins;
-
-    input [11:2] IM_addr;
-    input branch;
-
-    wire [9:0] address;
-    assign address = IM_addr;
+    input           enable;
+    input   [8:0]   addr;
+    output reg [63:0] data;
 
 `ifndef SRAM
 
+    `ifndef DIFFTEST
+    `ifndef SYNTHESIS
     reg [31:0] memory[0:1023];
+    `endif
+    `endif
 
     `ifdef DIFFTEST
-    import "DPI-C" function int instFetch(input int addr);
+    import "DPI-C" function longint unsigned instructionBusRead(input int addr);
     `endif
 
     always @(posedge clk or posedge rst) begin
         if (rst) begin
-            Ins <= 32'b0;
+            data <= 64'b0;
         end
         else begin
             `ifdef DIFFTEST
-            Ins <= InsMemRW ? instFetch({20'h00002, address, 2'b00}) : Ins;
+            data <= enable ? instructionBusRead({20'h00002, addr, 3'b000}) : data;
             `endif
             
             `ifndef DIFFTEST
             `ifndef SYNTHESIS
-            Ins <= InsMemRW ? memory[address] : Ins;
+            data <= enable ? {memory[{addr, 1'b1}], memory[{addr, 1'b0}]} : data;
             `endif
             `endif
         end
@@ -46,16 +43,16 @@ module IM(clk, rst, InsMemRW, addr,Ins, IM_addr, branch);
 
     TS1N65LPLL2048X64M8 memory (
         .CLK(clk),
-        .CEB(~InsMemRW),
+        .CEB(~enable),
         .WEB(1'b1),
-        .A({1'b0, address}),
+        .A({2'b00, addr}),
         .D(64'b0),
         .BWEB(64'b0),
         .Q(sram_out),
         .TSEL(2'b01)
     );
 
-    always @(*) Ins = sram_out[31:0];
+    always @(*) data = sram_out;
 
 `endif
 

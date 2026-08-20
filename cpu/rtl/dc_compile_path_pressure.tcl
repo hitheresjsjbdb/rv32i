@@ -21,21 +21,11 @@ set CLK_SETUP_UNCERTAINTY 0.15
 set CLK_HOLD_UNCERTAINTY  0.05
 
 # Datapath-only budgets for the current 5ns hot paths.
-set BUDGET_IM_TO_IFID_RFWRITE  4.52
-set BUDGET_IM_TO_IFID_ALUOP    4.54
-set BUDGET_IM_TO_IFID_WDSEL    4.56
-set BUDGET_IM_TO_IFID_DMCTRL   4.56
-set BUDGET_IM_TO_IFID_IMM12    4.56
-set BUDGET_IM_TO_IFID_OFFSET   4.54
 set BUDGET_BRANCH_TO_PC        4.50
 set BUDGET_OFFSET12_TO_PC      4.48
 set BUDGET_OFFSET20_TO_PC      4.50
-set BUDGET_ALUSRCA_TO_ALUOUT   4.50
-set BUDGET_ALUSRCB_TO_ALUOUT   4.50
 set BUDGET_NPCOP_TO_IFPCA4     4.52
-set BUDGET_IDEXB_TO_ALUOUT     4.56
 set BUDGET_NPC_ADD48_TO_PC     4.40
-set BUDGET_ALUSUB_TO_ALUOUT    4.40
 
 set REPORT_DIR ./reports_compile_pressure
 set RESULT_DIR ./results_compile_pressure
@@ -44,6 +34,10 @@ set WORK_DIR   ./work_compile_pressure
 file mkdir $REPORT_DIR
 file mkdir $RESULT_DIR
 file mkdir $WORK_DIR
+
+# Record synthesis transformations for RTL-to-netlist formal equivalence
+# checking (for example, in Synopsys Formality).
+set_svf $RESULT_DIR/${TOP}_compile_pressure.svf
 
 remove_design -all
 define_design_lib WORK -path $WORK_DIR
@@ -113,7 +107,6 @@ catch {set_app_var compile_delete_unloaded_sequential_cells false}
 # Add pressure where the current 5ns timing report shows the work is happening:
 # 1) decode: IM -> IR -> ControlUnit -> IF/ID control flops
 # 2) branch/offset -> NPC -> PC
-# 3) ALUSrcA -> MUX_2to1_A -> ALU -> ALUOut
 foreach dsn {IR IM} {
     set dsn_obj [get_designs -quiet $dsn]
     if {[sizeof_collection $dsn_obj] > 0} {
@@ -130,38 +123,9 @@ foreach dsn {ControlUnit NPC PC} {
     }
 }
 
-foreach dsn {ALU MUX_2to1_A} {
-    set dsn_obj [get_designs -quiet $dsn]
-    if {[sizeof_collection $dsn_obj] > 0} {
-        catch {set_max_fanout 3 $dsn_obj}
-        catch {set_max_transition 0.08 $dsn_obj}
-    }
-}
-
-set alu_dsn [get_designs -quiet ALU]
-if {[sizeof_collection $alu_dsn] > 0} {
-    catch {set_max_fanout 3 $alu_dsn}
-    catch {set_max_transition 0.08 $alu_dsn}
-}
-
-# Avoid mapping the hot arithmetic back into FA/HA ripple structures. The
-# broader wildcard coverage is intentional here: the timing reports are still
-# showing FA1D* cells on the longest chains, so constrain the full weak/full-
-# adder family rather than only a couple of drive variants.
-foreach pat {
-    HA1D* FA1D*
-    */HA1D* */FA1D*
-    tcbn65lpwc/HA1D* tcbn65lpwc/FA1D*
-} {
-    set lib_cells [get_lib_cells -quiet $pat]
-    if {[sizeof_collection $lib_cells] > 0} {
-        catch {set_dont_use $lib_cells true}
-    }
-}
-
-# Keep most of the hot datapath hierarchy intact so lower-level structure stays
-# readable, but allow ALU/NPC to optimize across their boundaries later.
-foreach inst {U_ALU U_NPC U_PC U_MUX_2to1_A U_MUX_3to1_B U_ALUOut} {
+# Keep the remaining hot datapath hierarchy intact so lower-level structure
+# stays readable.
+foreach inst {U_NPC U_PC U_MUX_2to1_A U_MUX_3to1_B U_ALUOut} {
     set cell_obj [get_cells -quiet $inst]
     if {[sizeof_collection $cell_obj] > 0} {
         catch {set_boundary_optimization $cell_obj false}
@@ -171,7 +135,6 @@ foreach inst {U_ALU U_NPC U_PC U_MUX_2to1_A U_MUX_3to1_B U_ALUOut} {
 
 set im_q_pins              [get_pins -quiet -hier U_IM/memory/Q*]
 set im_a_pins              [get_pins -quiet -hier U_IM/memory/A*]
-set alua_q_pins            [get_pins -quiet -hier U_A/out_data*]
 set ir_in_pins             [get_pins -quiet -hier U_IR/in_ins*]
 set ctrl_opcode_pins       [get_pins -quiet -hier U_ControlUnit/opcode*]
 set ctrl_funct3_pins       [get_pins -quiet -hier U_ControlUnit/Funct3*]
@@ -186,29 +149,19 @@ set ifpca4_d_pins          [get_pins -quiet -hier U_ControlUnit/U_IF_PCA4/in_dat
 set npcop_q_pins           [get_pins -quiet -hier U_ControlUnit/U_NPCOp/out_data*]
 set branch_q_pins          [get_pins -quiet -hier U_ControlUnit/U_branch/out_data*]
 set idex_pc_q_pins         [get_pins -quiet -hier U_ControlUnit/U_IDEX_PC/out_data*]
-set idex_aluop_q_pins      [get_pins -quiet -hier U_ControlUnit/U_IDEX_ALUOp/out_data*]
 set idex_offset_q_pins     [get_pins -quiet -hier U_ControlUnit/U_IDEX_Offset/out_data*]
 set idex_offset20_q_pins   [get_pins -quiet -hier U_ControlUnit/U_IDEX_Offset20/out_data*]
-set idex_alusrca_q_pins    [get_pins -quiet -hier U_ControlUnit/U_IDEX_ALUSrcA/out_data*]
-set idex_alusrcb_q_pins    [get_pins -quiet -hier U_ControlUnit/U_IDEX_ALUSrcB/out_data*]
-set idex_b_q_pins          [get_pins -quiet -hier U_ControlUnit/U_IDEX_ALU_B/out_data*]
 set aluout_d_pins          [get_pins -quiet -hier U_ALUOut/in_data*]
 set clock_regs             [all_registers -clock [get_clocks $CLK_NAME]]
 set pc_regs                [all_registers -of_objects [get_cells -quiet U_PC]]
 set aluout_regs            [all_registers -of_objects [get_cells -quiet U_ALUOut]]
 set ifpca4_regs            [all_registers -of_objects [get_cells -quiet U_ControlUnit/U_IF_PCA4]]
-set a_regs                 [all_registers -of_objects [get_cells -quiet U_A]]
 set idex_pc_regs           [get_cells -quiet -hier U_ControlUnit/U_IDEX_PC/out_data_reg*]
-set idex_aluop_regs        [get_cells -quiet -hier U_ControlUnit/U_IDEX_ALUOp/out_data_reg*]
 set idex_offset_regs       [get_cells -quiet -hier U_ControlUnit/U_IDEX_Offset/out_data_reg*]
 set idex_offset20_regs     [get_cells -quiet -hier U_ControlUnit/U_IDEX_Offset20/out_data_reg*]
-set idex_b_regs            [get_cells -quiet -hier U_ControlUnit/U_IDEX_ALU_B/out_data_reg*]
 set branch_regs            [get_cells -quiet -hier U_ControlUnit/U_branch/out_data_reg*]
 set npcop_regs             [get_cells -quiet -hier U_ControlUnit/U_NPCOp/out_data_reg*]
 set npc_add48_cell         [get_cells -quiet -hier U_NPC/add_48]
-set alu_sub_cell           [get_cells -quiet -hier U_ALU/U_DW_ALU_SUB]
-set alu_add_cell           [get_cells -quiet -hier U_ALU/U_DW_ALU_ADD]
-set weak_arith_libcells    [get_lib_cells -quiet */FA1D* */HA1D*]
 
 set ctrl_decode_in_pins $ctrl_opcode_pins
 if {[sizeof_collection $ctrl_funct3_pins] > 0} {
@@ -248,18 +201,12 @@ if {[sizeof_collection $ctrl_funct7_pins] > 0} {
     }
 }
 
-# Try to steer the hottest DesignWare adders toward faster implementations when
-# the local DC/DW setup supports instance-level implementation binding. Kept in
-# catch blocks so older tool setups fall back cleanly.
+# Try to steer the NPC DesignWare adder toward a faster implementation when the
+# local DC/DW setup supports instance-level implementation binding. Kept in a
+# catch block so older tool setups fall back cleanly.
 foreach impl {DW01_add/cla DW01_add/csla DW01_add/pparch} {
     if {[sizeof_collection $npc_add48_cell] > 0} {
         catch {set_implementation $impl $npc_add48_cell}
-    }
-    if {[sizeof_collection $alu_sub_cell] > 0} {
-        catch {set_implementation $impl $alu_sub_cell}
-    }
-    if {[sizeof_collection $alu_add_cell] > 0} {
-        catch {set_implementation $impl $alu_add_cell}
     }
 }
 
@@ -275,43 +222,8 @@ if {[sizeof_collection $ctrl_decode_in_pins] > 0 && [sizeof_collection $clock_re
     group_path -name CTRL_DECODE -from $ctrl_decode_in_pins -to $clock_regs -weight 14 -critical_range 0.20
 }
 
-if {[sizeof_collection $im_q_pins] > 0 && [sizeof_collection $ifid_rfwrite_d_pins] > 0} {
-    group_path -name IM_TO_IFID_RFWRITE -from $im_q_pins -to $ifid_rfwrite_d_pins -weight 40 -critical_range 0.30
-    set_max_delay $BUDGET_IM_TO_IFID_RFWRITE -from $im_q_pins -to $ifid_rfwrite_d_pins -datapath_only
-}
-
 if {[sizeof_collection $ctrl_decode_in_pins] > 0 && [sizeof_collection $ifid_rfwrite_d_pins] > 0} {
     group_path -name CTRL_TO_IFID_RFWRITE -from $ctrl_decode_in_pins -to $ifid_rfwrite_d_pins -weight 24 -critical_range 0.20
-}
-
-if {[sizeof_collection $im_q_pins] > 0 && [sizeof_collection $ifid_aluop_d_pins] > 0} {
-    group_path -name IM_TO_IFID_ALUOP -from $im_q_pins -to $ifid_aluop_d_pins -weight 28 -critical_range 0.25
-    set_max_delay $BUDGET_IM_TO_IFID_ALUOP -from $im_q_pins -to $ifid_aluop_d_pins -datapath_only
-}
-
-if {[sizeof_collection $im_q_pins] > 0 && [sizeof_collection $ifid_wdsel_d_pins] > 0} {
-    group_path -name IM_TO_IFID_WDSEL -from $im_q_pins -to $ifid_wdsel_d_pins -weight 18 -critical_range 0.20
-    set_max_delay $BUDGET_IM_TO_IFID_WDSEL -from $im_q_pins -to $ifid_wdsel_d_pins -datapath_only
-}
-
-if {[sizeof_collection $im_q_pins] > 0 && [sizeof_collection $ifid_dmctrl_d_pins] > 0} {
-    group_path -name IM_TO_IFID_DMCTRL -from $im_q_pins -to $ifid_dmctrl_d_pins -weight 18 -critical_range 0.20
-    set_max_delay $BUDGET_IM_TO_IFID_DMCTRL -from $im_q_pins -to $ifid_dmctrl_d_pins -datapath_only
-}
-
-if {[sizeof_collection $im_q_pins] > 0 && [sizeof_collection $ifid_imm12_d_pins] > 0} {
-    group_path -name IM_TO_IFID_IMM12 -from $im_q_pins -to $ifid_imm12_d_pins -weight 20 -critical_range 0.22
-    set_max_delay $BUDGET_IM_TO_IFID_IMM12 -from $im_q_pins -to $ifid_imm12_d_pins -datapath_only
-}
-
-if {[sizeof_collection $im_q_pins] > 0 && [sizeof_collection $ifid_offset_d_pins] > 0} {
-    group_path -name IM_TO_IFID_OFFSET -from $im_q_pins -to $ifid_offset_d_pins -weight 24 -critical_range 0.24
-    set_max_delay $BUDGET_IM_TO_IFID_OFFSET -from $im_q_pins -to $ifid_offset_d_pins -datapath_only
-}
-
-if {[sizeof_collection $idex_aluop_q_pins] > 0 && [sizeof_collection $aluout_regs] > 0} {
-    group_path -name ALUOP_TO_ALUOUT -from $idex_aluop_q_pins -to $aluout_regs -weight 38 -critical_range 0.30
-    set_max_delay 4.46 -from $idex_aluop_q_pins -to $aluout_regs -datapath_only
 }
 
 if {[sizeof_collection $npcop_q_pins] > 0 && [sizeof_collection $ifpca4_d_pins] > 0} {
@@ -349,21 +261,6 @@ if {[sizeof_collection $idex_offset20_q_pins] > 0 && [sizeof_collection $pc_regs
     set_max_delay $BUDGET_OFFSET20_TO_PC -from $idex_offset20_q_pins -to $pc_regs -datapath_only
 }
 
-if {[sizeof_collection $idex_alusrca_q_pins] > 0 && [sizeof_collection $aluout_regs] > 0} {
-    group_path -name ALUSRCA_TO_ALUOUT -from $idex_alusrca_q_pins -to $aluout_regs -weight 34 -critical_range 0.28
-    set_max_delay $BUDGET_ALUSRCA_TO_ALUOUT -from $idex_alusrca_q_pins -to $aluout_regs -datapath_only
-}
-
-if {[sizeof_collection $idex_alusrcb_q_pins] > 0 && [sizeof_collection $aluout_regs] > 0} {
-    group_path -name ALUSRCB_TO_ALUOUT -from $idex_alusrcb_q_pins -to $aluout_regs -weight 28 -critical_range 0.24
-    set_max_delay $BUDGET_ALUSRCB_TO_ALUOUT -from $idex_alusrcb_q_pins -to $aluout_regs -datapath_only
-}
-
-if {[sizeof_collection $idex_b_q_pins] > 0 && [sizeof_collection $aluout_d_pins] > 0} {
-    group_path -name IDEXB_TO_ALUOUT -from $idex_b_q_pins -to $aluout_d_pins -weight 14 -critical_range 0.20
-    set_max_delay $BUDGET_IDEXB_TO_ALUOUT -from $idex_b_q_pins -to $aluout_d_pins -datapath_only
-}
-
 if {[sizeof_collection $npc_add48_cell] > 0 && [sizeof_collection $npc_add48_src_q_pins] > 0 && [sizeof_collection $pc_regs] > 0} {
     catch {group_path -name NPC_ADD48_TO_PC -from $npc_add48_src_q_pins -through $npc_add48_cell -to $pc_regs -weight 80 -critical_range 0.40}
     catch {set_max_delay $BUDGET_NPC_ADD48_TO_PC -from $npc_add48_src_q_pins -through $npc_add48_cell -to $pc_regs -datapath_only}
@@ -372,37 +269,17 @@ if {[sizeof_collection $npc_add48_cell] > 0 && [sizeof_collection $npc_add48_src
     catch {set_ungroup $npc_add48_cell true}
 }
 
-if {[sizeof_collection $alu_sub_cell] > 0 && [sizeof_collection $alua_q_pins] > 0 && [sizeof_collection $aluout_regs] > 0} {
-    catch {group_path -name ALUSUBA_TO_ALUOUT -from $alua_q_pins -through $alu_sub_cell -to $aluout_regs -weight 80 -critical_range 0.40}
-    catch {set_max_delay $BUDGET_ALUSUB_TO_ALUOUT -from $alua_q_pins -through $alu_sub_cell -to $aluout_regs -datapath_only}
-    catch {set_max_transition 0.06 $alu_sub_cell}
-    catch {set_boundary_optimization $alu_sub_cell true}
-    catch {set_ungroup $alu_sub_cell true}
-}
-
-if {[sizeof_collection $alu_sub_cell] > 0 && [sizeof_collection $idex_b_q_pins] > 0 && [sizeof_collection $aluout_d_pins] > 0} {
-    catch {group_path -name ALUSUBB_TO_ALUOUT -from $idex_b_q_pins -through $alu_sub_cell -to $aluout_d_pins -weight 72 -critical_range 0.34}
-    catch {set_max_delay $BUDGET_ALUSUB_TO_ALUOUT -from $idex_b_q_pins -through $alu_sub_cell -to $aluout_d_pins -datapath_only}
-}
-
-if {[sizeof_collection $alu_add_cell] > 0} {
-    catch {set_boundary_optimization $alu_add_cell true}
-    catch {set_ungroup $alu_add_cell true}
-}
-
 # Tighten only the current critical source flops so DC spends effort buffering /
 # cloning them instead of globally flattening more logic.
-foreach reg_group [list $a_regs $idex_aluop_regs $idex_pc_regs $idex_offset_regs $idex_offset20_regs $idex_b_regs $branch_regs $npcop_regs] {
+foreach reg_group [list $idex_pc_regs $idex_offset_regs $idex_offset20_regs $branch_regs $npcop_regs] {
     if {[sizeof_collection $reg_group] > 0} {
         catch {set_max_fanout 2 $reg_group}
         catch {set_max_transition 0.06 $reg_group}
     }
 }
 
-# Allow decode/control logic to optimize across boundaries, and reopen only the
-# ALU/NPC module boundaries so the adder cones can still be restructured
-# without flattening the rest of the datapath.
-foreach inst {U_IR U_ControlUnit U_ALU U_NPC} {
+# Allow decode/control logic and NPC to optimize across their boundaries.
+foreach inst {U_IR U_ControlUnit U_NPC} {
     set cell_obj [get_cells -quiet $inst]
     if {[sizeof_collection $cell_obj] > 0} {
         catch {set_boundary_optimization $cell_obj true}
@@ -416,15 +293,6 @@ redirect -file $REPORT_DIR/precompile_arith_debug.rpt {
     echo "npc_add48_cell:"
     sizeof_collection $npc_add48_cell
     query_objects $npc_add48_cell
-    echo "alu_sub_cell:"
-    sizeof_collection $alu_sub_cell
-    query_objects $alu_sub_cell
-    echo "alu_add_cell:"
-    sizeof_collection $alu_add_cell
-    query_objects $alu_add_cell
-    echo "weak_arith_libcells:"
-    sizeof_collection $weak_arith_libcells
-    query_objects $weak_arith_libcells
 }
 
 # Baseline-first flow: keep structure closer to a plain compile result,
@@ -438,6 +306,20 @@ change_names -rules verilog -hierarchy
 
 set im_q_post            [get_pins -quiet -hier U_IM/memory/Q*]
 set im_a_post            [get_pins -quiet -hier U_IM/memory/A*]
+set alu_a_post           [get_pins -quiet -hier U_ALU/A*]
+set alu_b_post           [get_pins -quiet -hier U_ALU/B*]
+set aluop_post           [get_pins -quiet -hier U_ALU/ALUOp*]
+set alu_result_post      [get_pins -quiet -hier U_ALU/ALU_result*]
+set alu_input_post       $alu_a_post
+foreach extra_alu_input [list $alu_b_post $aluop_post] {
+    if {[sizeof_collection $extra_alu_input] > 0} {
+        if {[sizeof_collection $alu_input_post] > 0} {
+            set alu_input_post [add_to_collection $alu_input_post $extra_alu_input]
+        } else {
+            set alu_input_post $extra_alu_input
+        }
+    }
+}
 set post_regs            [all_registers -clock [get_clocks $CLK_NAME]]
 set branch_post_regs     [filter_collection $post_regs {full_name =~ *U_ControlUnit/U_branch/out_data_reg_*}]
 set idex_pc_post_regs    [filter_collection $post_regs {full_name =~ *U_ControlUnit/U_IDEX_PC/out_data_reg_*}]
@@ -492,6 +374,12 @@ redirect -file $REPORT_DIR/post_timing_collection_debug.rpt {
     echo "im_a_post count:"
     sizeof_collection $im_a_post
     query_objects $im_a_post
+    echo "alu_input_post count:"
+    sizeof_collection $alu_input_post
+    query_objects $alu_input_post
+    echo "alu_result_post count:"
+    sizeof_collection $alu_result_post
+    query_objects $alu_result_post
     echo "post_regs count:"
     sizeof_collection $post_regs
     echo "branch_post_regs count:"
@@ -533,6 +421,12 @@ redirect -file $REPORT_DIR/resources.rpt     {report_resources}
 redirect -file $REPORT_DIR/resources_hier.rpt {report_resources -hierarchy}
 redirect -file $REPORT_DIR/constraint.rpt    {report_constraint -all_violators}
 redirect -file $REPORT_DIR/timing_max_20.rpt {report_timing -delay max -max_paths 20 -nworst 1 -input_pins -nets -transition_time}
+
+if {[sizeof_collection $alu_input_post] > 0 && [sizeof_collection $alu_result_post] > 0} {
+    redirect -file $REPORT_DIR/alu_internal_timing.rpt [list report_timing -from $alu_input_post -to $alu_result_post -delay max -max_paths 20 -nworst 1 -input_pins -nets -transition_time]
+} else {
+    redirect -file $REPORT_DIR/alu_internal_timing.rpt {echo "Skipped: U_ALU input or ALU_result pin collection is empty. See post_timing_collection_debug.rpt"}
+}
 
 if {[sizeof_collection $im_q_post] > 0 && [sizeof_collection $ifid_rfwrite_post_d] > 0} {
     redirect -file $REPORT_DIR/im_to_ifid_rfwrite_timing.rpt [list report_timing -from $im_q_post -to $ifid_rfwrite_post_d -delay max -max_paths 20 -nworst 1 -input_pins -nets -transition_time]
@@ -605,6 +499,7 @@ write_file -format ddc     -hierarchy -output $RESULT_DIR/${TOP}_compile_pressur
 write_file -format verilog -hierarchy -output $RESULT_DIR/${TOP}_compile_pressure.v
 write_sdc $RESULT_DIR/${TOP}_compile_pressure.sdc
 catch {write_sdf $RESULT_DIR/${TOP}_compile_pressure.sdf}
+set_svf -off
 
 puts "Compile-based path-pressure synthesis completed."
 puts "Reports  : $REPORT_DIR"

@@ -1,12 +1,9 @@
 `timescale 1ns / 1ps
 
-// Single-outstanding-transfer Wishbone B4 Classic master.
+// Combinational Wishbone B4 Classic adapter. Requesters in this core keep
+// req_valid, address, and write data stable until rsp_valid is asserted.
 module WishboneMaster(
-    input         clk,
-    input         rst,
-
     input         req_valid,
-    output        req_ready,
     input  [31:0] req_addr,
     input  [31:0] req_wdata,
     input  [3:0]  req_sel,
@@ -27,44 +24,15 @@ module WishboneMaster(
     input         wb_err_i
 );
 
-reg        active;
-reg [31:0] address;
-reg [31:0] write_data;
-reg [3:0]  byte_select;
-reg        write_enable;
-
-assign req_ready = !active;
-
-assign rsp_valid = active && (wb_ack_i || wb_err_i);
-assign rsp_error = active && wb_err_i;
+assign rsp_valid = req_valid && (wb_ack_i || wb_err_i);
+assign rsp_error = req_valid && wb_err_i;
 assign rsp_rdata = wb_dat_i;
 
-assign wb_adr_o = address;
-assign wb_dat_o = write_data;
-assign wb_sel_o = byte_select;
-assign wb_we_o  = write_enable;
-assign wb_cyc_o = active;
-assign wb_stb_o = active;
-
-always @(posedge clk or posedge rst) begin
-    if (rst) begin
-        active       <= 1'b0;
-        address      <= 32'b0;
-        write_data   <= 32'b0;
-        byte_select  <= 4'b0;
-        write_enable <= 1'b0;
-    end
-    else if (active) begin
-        if (wb_ack_i || wb_err_i)
-            active <= 1'b0;
-    end
-    else if (req_valid) begin
-        active       <= 1'b1;
-        address      <= req_addr;
-        write_data   <= req_wdata;
-        byte_select  <= req_sel;
-        write_enable <= req_we;
-    end
-end
+assign wb_adr_o = req_addr;
+assign wb_dat_o = req_wdata;
+assign wb_sel_o = req_sel;
+assign wb_we_o  = req_we;
+assign wb_cyc_o = req_valid;
+assign wb_stb_o = req_valid;
 
 endmodule

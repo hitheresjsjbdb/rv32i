@@ -44,7 +44,9 @@ wire dec_sw_valid;
 wire dec_b_valid;
 wire dec_jal_valid;
 wire dec_jalr_valid;
+`ifdef DIFFTEST
 wire dec_is_ebreak;
+`endif
 
 assign dec_is_rtype = (opcode == `INSTR_RTYPE_OP);
 assign dec_is_itype = (opcode == `INSTR_ITYPE_OP);
@@ -75,8 +77,10 @@ assign dec_b_valid    = dec_is_btype && ((Funct3 == `INSTR_BEQ_FUNCT) ||
                                          (Funct3 == `INSTR_BNE_FUNCT));
 assign dec_jal_valid  = dec_is_jal;
 assign dec_jalr_valid = dec_is_jalr && (Funct3 == 3'b000);
+`ifdef DIFFTEST
 assign dec_is_ebreak  = ({Funct7, rs2, rs1, Funct3, rd, opcode} ==
                          32'h0010_0073);
+`endif
 
 assign dec_valid = dec_r_valid || dec_i_valid || dec_lw_valid ||
                    dec_sw_valid || dec_b_valid || dec_jal_valid ||

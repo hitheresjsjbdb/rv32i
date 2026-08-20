@@ -1,12 +1,9 @@
 `include "ctrl_signal_def.v"
 `include "instruction_def.v"
 
-module NPC(NPCOp, Offset12, Offset20, PC, rs, PCA4, NPC, NPC_PC, NPC_Offset12, NPC_Offset20, NPC_rs, NPC_taken_p4);
+module NPC(NPCOp, PC, PCA4, NPC, NPC_PC, NPC_Offset12, NPC_Offset20, NPC_rs, NPC_taken_p4);
     input  [1:0]  NPCOp;
-    input  [12:1] Offset12;
-    input  [20:1] Offset20;
     input  [31:0] PC;
-    input  [31:0] rs;
     output reg [31:0] PCA4;
     output reg [31:0] NPC;
     output reg [31:0] NPC_taken_p4;
