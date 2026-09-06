@@ -12,6 +12,7 @@ module ExceptionUnit(
     input         id_access_fault,
     input         ex_valid,
     input         ex_branch,
+    input         ex_redirect_predicted,
     input  [31:0] ex_pc,
     input         ex_rfwrite,
     input  [1:0]  ex_wdsel,
@@ -90,10 +91,11 @@ assign trap_request = !trap &&
                           (id_access_fault || id_inst_misaligned ||
                            id_illegal_exception ||
                            id_breakpoint_exception)))));
-// The local cache can start a target-line request in the redirect cycle. It
+// The instruction master can start a target request in the redirect cycle. It
 // does not need to wait for a previous external instruction-bus response.
 assign ex_redirect_wait = 1'b0;
-assign ex_redirect = ex_branch && !ex_ctrl_misaligned &&
+assign ex_redirect = ex_branch && !ex_redirect_predicted &&
+                     !ex_ctrl_misaligned &&
                      !mem_bus_wait && !mem_access_fault && !trap;
 
 always @(*) begin

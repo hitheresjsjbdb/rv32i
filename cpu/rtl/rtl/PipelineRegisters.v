@@ -11,36 +11,11 @@ module FetchDecodeRegisters(
     input  [31:0] if_stage_pca4,
     input         if_stage_valid,
     input  [31:0] raw_instruction,
-    input         if_illegal,
     input         if_access_fault,
-    input  [11:0] imm12,
-    input  [11:0] offset,
-    input  [19:0] offset20,
-    input  [4:0]  rs1,
-    input  [4:0]  rs2,
-    input  [4:0]  rd,
-    input  [3:0]  if_aluop,
-    input  [1:0]  if_alusrcb,
-    input  [1:0]  if_wdsel,
-    input         if_rfwrite,
-    input         if_dmctrl,
-
     output reg [31:0] id_pca4,
     output reg [31:0] id_pc,
     output reg [31:0] id_ins,
-    output reg        id_illegal,
     output reg        id_access_fault,
-    output reg [11:0] id_imm12,
-    output reg [11:0] id_offset,
-    output reg [19:0] id_offset20,
-    output reg [4:0]  id_rs1,
-    output reg [4:0]  id_rs2,
-    output reg [4:0]  id_rd,
-    output reg [3:0]  id_aluop,
-    output reg [1:0]  id_alusrcb,
-    output reg [1:0]  id_wdsel,
-    output reg        id_rfwrite,
-    output reg        id_dmctrl,
     output reg        id_valid
 );
 
@@ -49,19 +24,7 @@ always @(posedge clk or posedge rst) begin
         id_pca4         <= 32'b0;
         id_pc           <= 32'b0;
         id_ins          <= 32'b0;
-        id_illegal      <= 1'b0;
         id_access_fault <= 1'b0;
-        id_imm12        <= 12'b0;
-        id_offset       <= 12'b0;
-        id_offset20     <= 20'b0;
-        id_rs1          <= 5'b0;
-        id_rs2          <= 5'b0;
-        id_rd           <= 5'b0;
-        id_aluop        <= 4'b0;
-        id_alusrcb      <= 2'b0;
-        id_wdsel        <= 2'b0;
-        id_rfwrite      <= 1'b0;
-        id_dmctrl       <= `DMCtrl_RD;
         id_valid        <= 1'b0;
     end
     else begin
@@ -69,38 +32,14 @@ always @(posedge clk or posedge rst) begin
             id_pca4         <= 32'b0;
             id_pc           <= 32'b0;
             id_ins          <= 32'b0;
-            id_illegal      <= 1'b0;
             id_access_fault <= 1'b0;
-            id_imm12        <= 12'b0;
-            id_offset       <= 12'b0;
-            id_offset20     <= 20'b0;
-            id_rs1          <= 5'b0;
-            id_rs2          <= 5'b0;
-            id_rd           <= 5'b0;
-            id_aluop        <= 4'b0;
-            id_alusrcb      <= 2'b0;
-            id_wdsel        <= 2'b0;
-            id_rfwrite      <= 1'b0;
-            id_dmctrl       <= `DMCtrl_RD;
             id_valid        <= 1'b0;
         end
         else if (ready) begin
             id_pca4         <= if_stage_pca4;
             id_pc           <= if_stage_pc;
             id_ins          <= raw_instruction;
-            id_illegal      <= if_stage_valid && if_illegal;
             id_access_fault <= if_stage_valid && if_access_fault;
-            id_imm12        <= imm12;
-            id_offset       <= offset;
-            id_offset20     <= offset20;
-            id_rs1          <= rs1;
-            id_rs2          <= rs2;
-            id_rd           <= rd;
-            id_aluop        <= if_stage_valid ? if_aluop : 4'b0;
-            id_alusrcb      <= if_stage_valid ? if_alusrcb : 2'b0;
-            id_wdsel        <= if_stage_valid ? if_wdsel : 2'b0;
-            id_rfwrite      <= if_stage_valid && if_rfwrite;
-            id_dmctrl       <= if_stage_valid ? if_dmctrl : `DMCtrl_RD;
             id_valid        <= if_stage_valid;
         end
     end
@@ -125,6 +64,7 @@ module DecodeExecuteRegisters(
     input         id_dmctrl,
     input         id_valid,
     input         id_branch,
+    input         id_redirect_predicted,
     input  [1:0]  id_npcop,
 
     output reg [31:0] ex_pca4,
@@ -139,6 +79,7 @@ module DecodeExecuteRegisters(
     output reg        ex_dmctrl,
     output reg        ex_valid,
     output reg        ex_branch,
+    output reg        ex_redirect_predicted,
     output reg [1:0]  ex_npcop
 );
 
@@ -156,6 +97,7 @@ always @(posedge clk or posedge rst) begin
         ex_dmctrl   <= `DMCtrl_RD;
         ex_valid    <= 1'b0;
         ex_branch   <= 1'b0;
+        ex_redirect_predicted <= 1'b0;
         ex_npcop    <= `NPC_PC;
     end
     else if (ready) begin
@@ -172,6 +114,7 @@ always @(posedge clk or posedge rst) begin
             ex_dmctrl   <= `DMCtrl_RD;
             ex_valid    <= 1'b0;
             ex_branch   <= 1'b0;
+            ex_redirect_predicted <= 1'b0;
             ex_npcop    <= `NPC_PC;
         end
         else begin
@@ -187,6 +130,7 @@ always @(posedge clk or posedge rst) begin
             ex_dmctrl   <= id_valid ? id_dmctrl : `DMCtrl_RD;
             ex_valid    <= id_valid;
             ex_branch   <= id_valid && id_branch;
+            ex_redirect_predicted <= id_valid && id_redirect_predicted;
             ex_npcop    <= id_valid ? id_npcop : `NPC_PC;
         end
     end

@@ -100,16 +100,19 @@ assign wdsel = dec_lw_valid ? `WDSel_FromMEM :
                ((dec_jal_valid || dec_jalr_valid) ?
                 `WDSel_FromPC : `WDSel_FromALU);
 
-assign aluop[0] = dec_b_valid || dec_i_ori ||
-                  (dec_r_valid &&
+// ALU control does not need the full legal-instruction reduction. Illegal
+// instructions are qualified by dec_valid before they can change state. This
+// keeps unrelated Funct7 bits out of the ID-to-EX ALU-control path.
+assign aluop[0] = dec_is_btype || dec_i_ori ||
+                  (dec_is_rtype &&
                    (((Funct3 == 3'b000) && Funct7[5]) ||
                     (Funct3 == 3'b110) || (Funct3 == 3'b101)));
 assign aluop[1] = dec_i_ori ||
-                  (dec_r_valid &&
+                  (dec_is_rtype &&
                    ((Funct3 == 3'b111) || (Funct3 == 3'b110)));
-assign aluop[2] = dec_r_valid && Funct3[2] && !Funct3[1] &&
+assign aluop[2] = dec_is_rtype && Funct3[2] && !Funct3[1] &&
                   (!Funct3[0] || Funct7[5]);
-assign aluop[3] = dec_r_valid && !Funct3[1] && Funct3[0] &&
+assign aluop[3] = dec_is_rtype && !Funct3[1] && Funct3[0] &&
                   (!Funct3[2] || !Funct7[5]);
 
 endmodule

@@ -9,12 +9,15 @@ OBJ_DIR    := $(ROOT)/obj_dir
 RTL_TREE_DIR := $(ROOT)/rtl/rtl
 RTL_INC_DIR  := $(ROOT)/rtl/includes
 RTL_FLAT_SRC := $(ROOT)/riscv.v
+RTL_FLATTEN  := $(ROOT)/flatten_rtl.pl
 
 SEMU_DIR   := $(ROOT)/semu
 SEMU_SRC_DIR := $(SEMU_DIR)/src
 SEMU_INC_DIR := $(SEMU_DIR)/include
 
 VERILATOR  := verilator
+IVERILOG   := iverilog
+VVP        := vvp
 
 # ===================== RTL 源码选择 =====================
 ifeq ($(RTL_MODE),rtl)
@@ -37,6 +40,7 @@ VERILATOR_FLAGS := \
 	-cc --exe --build \
 	--trace \
 	-O2 \
+	-DDIFFTEST \
 	-I$(RTL_INC_DIR) \
 	-I$(RTL_TREE_DIR)
 
@@ -68,10 +72,10 @@ run: clean
 	$(MAKE) $(TARGET)
 	$(TARGET)
 
-single: clean
+single: clean flatten
 	$(MAKE) RTL_MODE=single $(TARGET)
 
-run-single: clean
+run-single: clean flatten
 	$(MAKE) RTL_MODE=single $(TARGET)
 	$(TARGET)
 
@@ -81,6 +85,23 @@ rtl: clean
 run-rtl: clean
 	$(MAKE) RTL_MODE=rtl $(TARGET)
 	$(TARGET)
+
+flatten:
+	perl $(RTL_FLATTEN)
+
+test-wishbone:
+	@mkdir -p $(BUILD_DIR)
+	$(IVERILOG) -g2012 -I$(RTL_INC_DIR) -I$(RTL_TREE_DIR) \
+		-o $(BUILD_DIR)/WishboneInstructionMaster_tb \
+		$(RTL_TREE_DIR)/WishboneInstructionMaster.v \
+		$(ROOT)/rtl/tb/WishboneInstructionMaster_tb.v
+	$(VVP) $(BUILD_DIR)/WishboneInstructionMaster_tb
+	$(IVERILOG) -g2012 -I$(RTL_INC_DIR) -I$(RTL_TREE_DIR) \
+		-o $(BUILD_DIR)/WishboneInstructionMemory_tb \
+		$(RTL_TREE_DIR)/IM.v \
+		$(RTL_TREE_DIR)/WishboneInstructionMemory.v \
+		$(ROOT)/rtl/tb/WishboneInstructionMemory_tb.v
+	$(VVP) $(BUILD_DIR)/WishboneInstructionMemory_tb
 
 # ===================== 清理 =====================
 clean:
@@ -95,4 +116,4 @@ print:
 	@echo "SEMU SRCS:"
 	@echo $(SEMU_SRCS)
 
-.PHONY: all run single run-single rtl run-rtl clean print
+.PHONY: all run single run-single rtl run-rtl flatten test-wishbone clean print

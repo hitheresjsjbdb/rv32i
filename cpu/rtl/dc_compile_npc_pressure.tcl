@@ -14,9 +14,12 @@
 set SCRIPT_DIR [file dirname [file normalize [info script]]]
 cd $SCRIPT_DIR
 
-set TOP         riscv
-set CLK_PORT    clk
-set CLK_PERIOD  3.0
+set TOP                riscv
+set CLK_PORT           clk
+set CLK_PERIOD         4.0
+set TARGET_SETUP_SLACK 0.10
+set HOLD_UNCERTAINTY   0.05
+set CRITICAL_RANGE     0.20
 
 set RTL_DIR     ./rtl
 set INCLUDE_DIR ./rtl/includes
@@ -42,13 +45,17 @@ set RTL_FILES [list \
     $RTL_DIR/Flopr.v \
     $RTL_DIR/ForwardingUnit.v \
     $RTL_DIR/HazardUnit.v \
+    $RTL_DIR/IDOperandSelector.v \
+    $RTL_DIR/IDRedirectUnit.v \
     $RTL_DIR/IM.v \
-    $RTL_DIR/InstructionCache.v \
+    $RTL_DIR/InstructionFields.v \
     $RTL_DIR/InstructionDecoder.v \
     $RTL_DIR/NPC.v \
     $RTL_DIR/PC.v \
     $RTL_DIR/PipelineRegisters.v \
     $RTL_DIR/RF.v \
+    $RTL_DIR/WishboneInstructionMaster.v \
+    $RTL_DIR/WishboneLocalRouter.v \
     $RTL_DIR/WishboneMaster.v \
     $RTL_DIR/WishboneInstructionMemory.v \
     $RTL_DIR/WishboneDataMemory.v \
@@ -93,57 +100,19 @@ if {[catch {link} LINK_MESSAGE]} {
 check_design
 
 create_clock -name core_clock -period $CLK_PERIOD [get_ports $CLK_PORT]
+set_clock_uncertainty -setup $TARGET_SETUP_SLACK [get_clocks core_clock]
+set_clock_uncertainty -hold $HOLD_UNCERTAINTY [get_clocks core_clock]
+set_critical_range $CRITICAL_RANGE [current_design]
+set_fix_hold [get_clocks core_clock]
 
 if {[sizeof_collection [get_ports -quiet rst]] > 0} {
     set_false_path -from [get_ports rst]
 }
 
-# The SRAM macro has a CLK-to-Q longer than one core period. Both local
-# Wishbone slaves functionally wait until the second edge before a consumer
-# captures Q. The instruction SRAM is captured by the low refill register and
-# by the slave's 64-bit line buffer; subsequent accesses use the line buffer,
-# so the SRAM no longer drives the cache data array directly. Target these
-# actual capture-register D pins explicitly so DC cannot silently check the
-# SRAM paths as single-cycle paths.
-set IM_Q_PINS [get_pins -quiet \
-    U_InstructionMemorySlave/U_IM/memory/Q*]
-set ICACHE_REFILL_REGS [get_cells -quiet -hierarchical -filter \
-    {full_name =~ U_InstructionMemorySlave/buffered_line_data_reg* || \
-     full_name =~ U_InstructionCache/refill_word_reg* || \
-     full_name =~ U_ControlUnit/U_FetchDecodeRegisters/*_reg*}]
-set ICACHE_REFILL_D_PINS [get_pins -quiet -of_objects \
-    $ICACHE_REFILL_REGS -filter {name == D}]
-
-if {[sizeof_collection $IM_Q_PINS] > 0 &&
-    [sizeof_collection $ICACHE_REFILL_D_PINS] > 0} {
-    set_multicycle_path 2 -setup -from $IM_Q_PINS \
-        -to $ICACHE_REFILL_D_PINS
-    set_multicycle_path 1 -hold -from $IM_Q_PINS \
-        -to $ICACHE_REFILL_D_PINS
-} else {
-    puts "ERROR: instruction SRAM refill multicycle pins were not found."
-    exit 1
-}
-
-set DM_Q_PINS [get_pins -quiet U_DataMemorySlave/U_DM/memory/Q*]
-set DM_CAPTURE_REGS [get_cells -quiet -hierarchical -filter \
-    {full_name =~ U_ControlUnit/U_MemoryWritebackRegisters/wb_data_reg*}]
-set DM_CAPTURE_D_PINS [get_pins -quiet -of_objects $DM_CAPTURE_REGS \
-    -filter {name == D}]
-
-if {[sizeof_collection $DM_Q_PINS] > 0 &&
-    [sizeof_collection $DM_CAPTURE_D_PINS] > 0} {
-    set_multicycle_path 2 -setup -from $DM_Q_PINS \
-        -to $DM_CAPTURE_D_PINS
-    set_multicycle_path 1 -hold -from $DM_Q_PINS \
-        -to $DM_CAPTURE_D_PINS
-} else {
-    puts "ERROR: data SRAM capture multicycle pins were not found."
-    exit 1
-}
-
-# One baseline mapping pass. No compile_ultra, retiming, path groups,
-# incremental recompilation, or path-specific constraints are used.
+# Reserve setup margin through clock uncertainty, prioritize delay around the
+# critical cone, and let mapping insert cells where minimum-delay repair is
+# required. No multicycle or path-specific exceptions are used.
+set_cost_priority -delay
 compile
 
 redirect -file $REPORT_DIR/check_design.rpt {check_design}
@@ -151,7 +120,19 @@ redirect -file $REPORT_DIR/check_timing.rpt {check_timing}
 redirect -file $REPORT_DIR/area.rpt {report_area}
 redirect -file $REPORT_DIR/qor.rpt {report_qor}
 redirect -file $REPORT_DIR/timing.rpt {
-    report_timing -delay max -max_paths 10
+    report_timing -delay max -max_paths 20 -nworst 1 \
+        -input_pins -nets -transition_time
+}
+redirect -file $REPORT_DIR/timing_setup.rpt {
+    report_timing -delay max -max_paths 20 -nworst 1 \
+        -input_pins -nets -transition_time
+}
+redirect -file $REPORT_DIR/timing_hold.rpt {
+    report_timing -delay min -max_paths 20 -nworst 1 \
+        -input_pins -nets -transition_time
+}
+redirect -file $REPORT_DIR/constraint_violators.rpt {
+    report_constraint -all_violators
 }
 
 write_file -format ddc -hierarchy \
@@ -161,5 +142,8 @@ write_file -format verilog -hierarchy \
 write_sdc $RESULT_DIR/${TOP}_minimal.sdc
 
 puts "Minimal synthesis completed."
+puts "Clock period: $CLK_PERIOD ns"
+puts "Target setup margin: $TARGET_SETUP_SLACK ns"
+puts "Hold uncertainty: $HOLD_UNCERTAINTY ns"
 puts "Reports: $REPORT_DIR"
 puts "Results: $RESULT_DIR"

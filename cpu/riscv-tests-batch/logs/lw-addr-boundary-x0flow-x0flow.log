@@ -1,0 +1,8 @@
+(sdb) c
+PC  check failed: DUT's pc = 0x000020e0, while SEMU's pc = 0x000020dc
+Unsupported instruction: 0x00000017 at pc = 000020dc
+SEMU terminated with errors
+48 instruction(s) were executed
+Executed 81 clock cycle(s)
+CPI: 1.79167
+(sdb) q

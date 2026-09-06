@@ -1,6 +1,8 @@
 (sdb) c
 SEMU terminated successfully
 20 instruction(s) were executed
-Executed 42 clock cycle(s)
-CPI: 2.1
+Executed 39 clock cycle(s)
+CPI: 1.95
+Wishbone difftest: 25 instruction transfer(s), 0 data transfer(s)
+Pipeline stalls: instruction=14, load-hazard=1, data-memory=0, redirects=6
 (sdb) q

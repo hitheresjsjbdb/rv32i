@@ -11,9 +11,11 @@ ret_dep:
 
 dep_target:
     addi x5, x5, 1
-    add x10, x1, x0
+    addi x10, x0, 96
+    sw x1, 0(x10)
     addi x5, x5, 1
-    jalr x0, 0(x10)
+    lw x11, 0(x10)
+    jalr x0, 0(x11)
     jal x0, pass
 fail:
     .word 0x00000017

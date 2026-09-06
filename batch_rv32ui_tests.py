@@ -14,6 +14,8 @@ INST_BASE_ADDR = 0x2000
 ERR_PC_RE = re.compile(r"Error occurrd at pc = 0x([0-9a-fA-F]+)")
 UNSUPPORTED_RE = re.compile(r"Unsupported instruction:\s*0x([0-9a-fA-F]+)\s*at pc =\s*([0-9a-fA-F]+)")
 DISASM_RE = re.compile(r"\s*0x([0-9a-fA-F]+):\s*([a-zA-Z0-9_.]+)\s*(.*)")
+INST_COUNT_RE = re.compile(r"^\s*(\d+)\s+instruction\(s\)\s+were executed\s*$", re.MULTILINE)
+CYCLE_COUNT_RE = re.compile(r"^\s*Executed\s+(\d+)\s+clock cycle\(s\)\s*$", re.MULTILINE)
 
 DEFAULT_TESTS = [
     "add",
@@ -33,6 +35,25 @@ DEFAULT_TESTS = [
     "jal",
     "jalr",
 ]
+
+TEST_TYPE_MAP = {
+    "add": "R",
+    "and": "R",
+    "or": "R",
+    "xor": "R",
+    "sll": "R",
+    "srl": "R",
+    "sra": "R",
+    "sub": "R",
+    "addi": "I",
+    "ori": "I",
+    "lw": "I",
+    "jalr": "I",
+    "sw": "S",
+    "beq": "B",
+    "bne": "B",
+    "jal": "J",
+}
 
 
 def run_checked(cmd, cwd=None):
@@ -815,9 +836,11 @@ ret_dep:
 
 dep_target:
     addi x5, x5, 1
-    add x10, x1, x0
+    addi x10, x0, 96
+    sw x1, 0(x10)
     addi x5, x5, 1
-    jalr x0, 0(x10)
+    lw x11, 0(x10)
+    jalr x0, 0(x11)
 """.strip()
                 ),
             ),
@@ -1321,6 +1344,46 @@ def format_output_tail(output: str, max_lines: int = 3):
     return " | ".join(lines[-max_lines:])
 
 
+def extract_perf_stats(output: str):
+    inst_match = INST_COUNT_RE.search(output)
+    cycle_match = CYCLE_COUNT_RE.search(output)
+    if not inst_match or not cycle_match:
+        return None
+
+    instructions = int(inst_match.group(1))
+    cycles = int(cycle_match.group(1))
+    if instructions <= 0:
+        return None
+
+    return {
+        "instructions": instructions,
+        "cycles": cycles,
+        "cpi": cycles / instructions,
+    }
+
+
+def classify_case_type(case_id: str):
+    if case_id.startswith("mixed."):
+        return "mixed"
+    base = case_id.split(".", 1)[0]
+    return TEST_TYPE_MAP.get(base, "unknown")
+
+
+def aggregate_perf_stats(stats_list):
+    if not stats_list:
+        return None
+
+    total_instructions = sum(item["instructions"] for item in stats_list)
+    total_cycles = sum(item["cycles"] for item in stats_list)
+    return {
+        "cases": len(stats_list),
+        "instructions": total_instructions,
+        "cycles": total_cycles,
+        "aggregate_cpi": total_cycles / total_instructions,
+        "arithmetic_mean_cpi": sum(item["cpi"] for item in stats_list) / len(stats_list),
+    }
+
+
 def parse_tests(raw: str):
     return [x.strip() for x in raw.split(",") if x.strip()]
 
@@ -1389,6 +1452,8 @@ def main():
         print("Instructions: skipped (mixed-mode only)")
 
     summary = []
+    perf_stats = []
+    missing_perf_cases = []
 
     case_specs = []
 
@@ -1438,8 +1503,26 @@ def main():
                 log_path = log_dir / f"{safe_case}.log"
                 log_path.write_text(output, encoding="utf-8")
 
+                perf = extract_perf_stats(output)
+                if status == "PASS" and perf is not None:
+                    perf_stats.append(
+                        {
+                            "case_id": case_id,
+                            "type": classify_case_type(case_id),
+                            **perf,
+                        }
+                    )
+                elif status == "PASS":
+                    missing_perf_cases.append(case_id)
+
                 if status == "PASS":
-                    detail = format_output_tail(output)
+                    if perf is not None:
+                        detail = (
+                            f"instructions={perf['instructions']} | cycles={perf['cycles']}"
+                            f" | CPI={perf['cpi']:.6f} | {format_output_tail(output)}"
+                        )
+                    else:
+                        detail = f"performance counters unavailable | {format_output_tail(output)}"
                 else:
                     inst_detail = extract_failed_instruction(output, hex_path)
                     tail = format_output_tail(output)
@@ -1451,10 +1534,53 @@ def main():
             summary.append((case_id, "ERROR", str(e)))
             print(f"[ERROR] {case_id}: {e}")
 
+    aggregate_perf = aggregate_perf_stats(perf_stats)
+    type_perf = {}
+    for inst_type in ["R", "I", "S", "B", "J", "mixed", "unknown"]:
+        stats = [item for item in perf_stats if item["type"] == inst_type]
+        aggregated = aggregate_perf_stats(stats)
+        if aggregated is not None:
+            type_perf[inst_type] = aggregated
+
+    pass_cases = sum(1 for _, status, _ in summary if status == "PASS")
+
     summary_path = out_dir / "summary.txt"
     with summary_path.open("w", encoding="utf-8") as f:
         for name, status, detail in summary:
             f.write(f"{name}\t{status}\t{detail}\n")
+        if aggregate_perf is not None:
+            f.write("\nPerformance summary (PASS cases with counters)\n")
+            f.write(f"Cases\t{aggregate_perf['cases']}/{pass_cases}\n")
+            f.write(f"Total instructions\t{aggregate_perf['instructions']}\n")
+            f.write(f"Total cycles\t{aggregate_perf['cycles']}\n")
+            f.write(f"Aggregate CPI\t{aggregate_perf['aggregate_cpi']:.6f}\n")
+            f.write(f"Arithmetic mean CPI\t{aggregate_perf['arithmetic_mean_cpi']:.6f}\n")
+            for inst_type, stats in type_perf.items():
+                f.write(
+                    f"Type {inst_type} CPI\t{stats['aggregate_cpi']:.6f}"
+                    f"\tcases={stats['cases']}\tinstructions={stats['instructions']}"
+                    f"\tcycles={stats['cycles']}\n"
+                )
+
+    if aggregate_perf is not None:
+        print("\nPerformance summary (PASS cases with counters):")
+        print(f"Cases: {aggregate_perf['cases']}/{pass_cases}")
+        print(f"Total instructions: {aggregate_perf['instructions']}")
+        print(f"Total cycles: {aggregate_perf['cycles']}")
+        print(f"Aggregate CPI (total cycles / total instructions): {aggregate_perf['aggregate_cpi']:.6f}")
+        print(f"Arithmetic mean CPI (mean of per-case CPI): {aggregate_perf['arithmetic_mean_cpi']:.6f}")
+        print("CPI by instruction type:")
+        for inst_type, stats in type_perf.items():
+            print(
+                f"- {inst_type}: CPI={stats['aggregate_cpi']:.6f}, cases={stats['cases']}, "
+                f"instructions={stats['instructions']}, cycles={stats['cycles']}"
+            )
+
+    if missing_perf_cases:
+        print(
+            "Warning: performance counters were not found for PASS case(s): "
+            + ", ".join(missing_perf_cases)
+        )
 
     failed_cases = [(n, s, d) for (n, s, d) in summary if s in {"FAIL", "ERROR", "UNKNOWN"}]
     if failed_cases:

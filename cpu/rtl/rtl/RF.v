@@ -10,6 +10,8 @@ input RFWrite,
 input clk,
 output [31:0] RD1,
 output [31:0] RD2,
+output [31:0] RD1_raw,
+output [31:0] RD2_raw,
 
 input forward1,
 input forward2,
@@ -32,8 +34,10 @@ always @(posedge clk) begin
   end
 end
 
-assign RD1 = forward1 ? FD1 : register[RR1];
-assign RD2 = forward2 ? FD2 : register[RR2];
+assign RD1_raw = register[RR1];
+assign RD2_raw = register[RR2];
+assign RD1 = forward1 ? FD1 : RD1_raw;
+assign RD2 = forward2 ? FD2 : RD2_raw;
 
 `ifdef DIFFTEST
 

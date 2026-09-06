@@ -1,0 +1,41 @@
+.text
+.globl _start
+_start:
+addi x31, x0, 0
+    addi x30, x0, 7
+    add x0, x30, x30
+    ori x0, x30, 3
+    bne x0, x31, fail
+
+    addi x29, x0, 3
+wrapa_pre_loop_1:
+    addi x31, x31, 1
+    addi x29, x29, -1
+    bne x29, x0, wrapa_pre_loop_1
+    addi x28, x0, 3
+    bne x31, x28, fail
+
+addi x5, x0, 0
+    addi x6, x0, 1
+    addi x7, x0, 5
+or_loop:
+    or x5, x5, x6
+    sll x6, x6, x6          # shift by current value (1->2->8 via mask effects)
+    addi x7, x7, -1
+    bne x7, x0, or_loop
+    bne x5, x0, pass_check
+    jal x0, fail
+pass_check:
+
+addi x27, x0, 2
+wrapa_post_loop_1:
+    addi x31, x31, -1
+    addi x27, x27, -1
+    bne x27, x0, wrapa_post_loop_1
+    addi x26, x0, 1
+    bne x31, x26, fail
+    jal x0, pass
+fail:
+    .word 0x00000017
+pass:
+    ebreak

@@ -6,6 +6,7 @@
 #include "semu/semu.h"
 #include "exec/exec.h"
 #include "run/run.h"
+#include "bus/wishbone.h"
 
 extern CPU cpu;
 extern SemuStatus semuStatus;
@@ -13,6 +14,7 @@ extern SemuStatus semuStatus;
 void init() {
     instParsing();
     initCapstone();
+    sim::resetWishboneDiff();
     sim::reset();
     cpu.pc = instMemAddrOffset;
     R(0) = 0;
