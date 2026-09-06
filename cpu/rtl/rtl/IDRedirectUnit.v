@@ -58,21 +58,30 @@ end
 // Keep the target adders independent so no operand mux is inserted ahead of
 // the carry network on the fetch-address path.
 NPC_prefix_adder32 U_BRANCH_TARGET_ADD (
-    .A   (id_pc),
-    .B   ({{19{offset12[11]}}, offset12, 1'b0}),
-    .SUM (branch_target)
+    // Inputs
+    .A(id_pc),
+    .B({{19{offset12[11]}}, offset12, 1'b0}),
+
+    // Outputs
+    .SUM(branch_target)
 );
 
 NPC_prefix_adder32 U_JAL_TARGET_ADD (
-    .A   (id_pc),
-    .B   ({{11{offset20[19]}}, offset20, 1'b0}),
-    .SUM (jal_target)
+    // Inputs
+    .A(id_pc),
+    .B({{11{offset20[19]}}, offset20, 1'b0}),
+
+    // Outputs
+    .SUM(jal_target)
 );
 
 NPC_prefix_adder32 U_JALR_TARGET_ADD (
-    .A   (control_rd1),
-    .B   ({{20{imm12[11]}}, imm12}),
-    .SUM (jalr_target_sum)
+    // Inputs
+    .A(control_rd1),
+    .B({{20{imm12[11]}}, imm12}),
+
+    // Outputs
+    .SUM(jalr_target_sum)
 );
 
 always @(*) begin

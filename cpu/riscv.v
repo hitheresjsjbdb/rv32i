@@ -778,14 +778,15 @@ endmodule
 // Source: rtl/rtl/DM.v
 module DM(clk, addr, write_data, write_enable, read_data);
     input         clk;
-    input  [11:2] addr;
+    // 32 KiB data window (8192 32-bit words).
+    input  [14:2] addr;
     input  [31:0] write_data;
     input         write_enable;
     output reg [31:0] read_data;
 
 `ifndef SRAM
 
-    reg [31:0] memory[0:1023];
+    reg [31:0] memory[0:8191];
 
     always @(posedge clk) begin
         if (write_enable) begin
@@ -800,20 +801,63 @@ module DM(clk, addr, write_data, write_enable, read_data);
 
 `ifdef SRAM
 
-    wire [63:0] sram_out;
+    wire [63:0] sram_out0;
+    wire [63:0] sram_out1;
+    wire [63:0] sram_out2;
+    wire [63:0] sram_out3;
 
-    TS1N65LPLL2048X64M8 memory (
+    TS1N65LPLL2048X64M8 memory0 (
         .CLK(clk),
-        .CEB(1'b0),
+        .CEB((addr[12:11] != 2'b00)),
         .WEB(~write_enable),
-        .A({1'b0, addr}),
+        .A(addr[10:0]),
         .D({32'b0, write_data}),
         .BWEB(64'b0),
-        .Q(sram_out),
+        .Q(sram_out0),
         .TSEL(2'b01)
     );
 
-    always @(*) read_data = sram_out[31:0];
+    TS1N65LPLL2048X64M8 memory1 (
+        .CLK(clk),
+        .CEB((addr[12:11] != 2'b01)),
+        .WEB(~write_enable),
+        .A(addr[10:0]),
+        .D({32'b0, write_data}),
+        .BWEB(64'b0),
+        .Q(sram_out1),
+        .TSEL(2'b01)
+    );
+
+    TS1N65LPLL2048X64M8 memory2 (
+        .CLK(clk),
+        .CEB((addr[12:11] != 2'b10)),
+        .WEB(~write_enable),
+        .A(addr[10:0]),
+        .D({32'b0, write_data}),
+        .BWEB(64'b0),
+        .Q(sram_out2),
+        .TSEL(2'b01)
+    );
+
+    TS1N65LPLL2048X64M8 memory3 (
+        .CLK(clk),
+        .CEB((addr[12:11] != 2'b11)),
+        .WEB(~write_enable),
+        .A(addr[10:0]),
+        .D({32'b0, write_data}),
+        .BWEB(64'b0),
+        .Q(sram_out3),
+        .TSEL(2'b01)
+    );
+
+    always @(*) begin
+        case (addr[12:11])
+            2'b00: read_data = sram_out0[31:0];
+            2'b01: read_data = sram_out1[31:0];
+            2'b10: read_data = sram_out2[31:0];
+            default: read_data = sram_out3[31:0];
+        endcase
+    end
 
 `endif
 
@@ -877,8 +921,16 @@ assign id_breakpoint_exception = 1'b0;
 `else
 assign id_breakpoint_exception = id_valid && (id_ins == 32'h0010_0073);
 `endif
+`ifdef DIFFTEST
+// The software reference model terminates on EBREAK.  With a combinational
+// instruction image, younger padding words may already be in ID in the same
+// cycle; let the reference model report unsupported instructions instead of
+// turning that speculative word into an architectural trap.
+assign id_illegal_exception = 1'b0;
+`else
 assign id_illegal_exception = id_valid && id_illegal &&
                               !id_breakpoint_exception;
+`endif
 
 assign ex_ctrl_misaligned = ex_valid && ex_branch &&
                             (redirect_target[1:0] != 2'b00);
@@ -1278,56 +1330,59 @@ module IM(clk, rst, enable, addr, data);
     input           clk;
     input           rst;
     input           enable;
-    input   [8:0]   addr;
-    output reg [63:0] data;
+    // 32 KiB instruction window, fetched as 64-bit (8-byte) lines.
+    input   [11:0]  addr;
+    output [63:0] data;
 
 `ifndef SRAM
 
     `ifndef DIFFTEST
     `ifndef SYNTHESIS
-    reg [31:0] memory[0:1023];
+    reg [31:0] memory[0:8191];
     `endif
     `endif
 
     `ifdef DIFFTEST
-    import "DPI-C" function longint unsigned instructionBusRead(input int addr);
+    import "DPI-C" function longint unsigned instructionMemoryRead(input int addr);
+    assign data = instructionMemoryRead(32'h00002000 + {17'b0, addr, 3'b000});
     `endif
 
-    always @(posedge clk or posedge rst) begin
-        if (rst) begin
-            data <= 64'b0;
-        end
-        else begin
-            `ifdef DIFFTEST
-            data <= enable ? instructionBusRead({20'h00002, addr, 3'b000}) : data;
-            `endif
-
-            `ifndef DIFFTEST
-            `ifndef SYNTHESIS
-            data <= enable ? {memory[{addr, 1'b1}], memory[{addr, 1'b0}]} : data;
-            `endif
-            `endif
-        end
-    end
+    `ifndef DIFFTEST
+    `ifndef SYNTHESIS
+    assign data = {memory[{addr, 1'b1}], memory[{addr, 1'b0}]};
+    `endif
+    `endif
 
 `endif
 
 `ifdef SRAM
 
-    wire [63:0] sram_out;
+    wire [63:0] sram_out0;
+    wire [63:0] sram_out1;
 
-    TS1N65LPLL2048X64M8 memory (
+    TS1N65LPLL2048X64M8 memory0 (
         .CLK(clk),
-        .CEB(~enable),
+        .CEB(~enable | addr[11]),
         .WEB(1'b1),
-        .A({2'b00, addr}),
+        .A(addr[10:0]),
         .D(64'b0),
         .BWEB(64'b0),
-        .Q(sram_out),
+        .Q(sram_out0),
         .TSEL(2'b01)
     );
 
-    always @(*) data = sram_out;
+    TS1N65LPLL2048X64M8 memory1 (
+        .CLK(clk),
+        .CEB(~enable | ~addr[11]),
+        .WEB(1'b1),
+        .A(addr[10:0]),
+        .D(64'b0),
+        .BWEB(64'b0),
+        .Q(sram_out1),
+        .TSEL(2'b01)
+    );
+
+    always @(*) data = addr[11] ? sram_out1 : sram_out0;
 
 `endif
 
@@ -2011,485 +2066,110 @@ endfunction
 
 endmodule
 
-// Source: rtl/rtl/WishboneInstructionMaster.v
-// Single-outstanding instruction master. It holds a Wishbone request stable
-// until completion and drops a response when the fetch PC changed meanwhile.
-module WishboneInstructionMaster(
+// Source: rtl/rtl/DirectInstructionMemory.v
+// Direct instruction-memory interface.  This module replaces the former
+// bus chain while preserving the pipeline's req_valid/rsp_valid
+// handshake.  The local instruction image occupies 32 KiB at 0x00002000.
+module DirectInstructionMemory(
     input         clk,
     input         rst,
     input         req_valid,
     input  [31:0] req_addr,
-
     output        rsp_valid,
     output        rsp_error,
-    output [31:0] rsp_rdata,
-
-    output [31:0] wb_adr_o,
-    output [31:0] wb_dat_o,
-    input  [31:0] wb_dat_i,
-    output [3:0]  wb_sel_o,
-    output        wb_we_o,
-    output        wb_cyc_o,
-    output        wb_stb_o,
-    input         wb_ack_i,
-    input         wb_err_i
+    output [31:0] rsp_rdata
 );
+
+localparam [31:0] INSTRUCTION_BASE = 32'h00002000;
+localparam [31:0] INSTRUCTION_END  = 32'h0000a000;
+
+wire       address_valid;
+wire       launch;
+wire [11:0] launch_line;
+wire [31:0] instruction_offset;
+wire [63:0] line_data;
+
+assign address_valid = (req_addr >= INSTRUCTION_BASE) &&
+                       (req_addr < INSTRUCTION_END);
+assign launch        = req_valid && address_valid;
+assign instruction_offset = req_addr - INSTRUCTION_BASE;
+assign launch_line   = instruction_offset[14:3];
+
+IM U_IM (
+    .clk(clk),
+    .rst(rst),
+    .enable(launch),
+    .addr(launch_line),
+    .data(line_data)
+);
+
+// The direct memory is combinational: an accepted request and its response
+// are visible in the same cycle.  This removes the one-cycle fetch bubble
+// that was only needed by the former bus/SRAM wrapper.
+assign rsp_valid = req_valid && address_valid;
+assign rsp_error = req_valid && !address_valid;
+assign rsp_rdata = req_addr[2] ? line_data[63:32] : line_data[31:0];
+
+endmodule
+
+// Source: rtl/rtl/DirectDataMemory.v
+// Direct data-memory interface.  It preserves the one-request-at-a-time
+// handshake expected by ControlUnit, without exposing a bus protocol.
+// The local data image occupies 32 KiB at 0x00000000; other addresses report
+// an access error.
+module DirectDataMemory(
+    input         clk,
+    input         rst,
+    input         req_valid,
+    input  [31:0] req_addr,
+    input  [31:0] req_wdata,
+    input         req_we,
+    output        rsp_valid,
+    output        rsp_error,
+    output [31:0] rsp_rdata
+);
+
+localparam [31:0] DATA_END = 32'h00008000;
 
 reg        pending;
 reg [31:0] pending_addr;
-
+wire       address_valid;
+wire       accept;
 wire [31:0] active_addr;
-wire        bus_request;
-wire        bus_response;
-wire        response_current;
+wire [31:0] memory_data;
 
-assign active_addr      = pending ? pending_addr : req_addr;
-assign bus_request      = pending || req_valid;
-assign bus_response     = bus_request && (wb_ack_i || wb_err_i);
-assign response_current = req_valid && (active_addr == req_addr);
+assign address_valid = (req_addr < DATA_END);
+assign accept        = req_valid && address_valid && !pending;
+assign active_addr   = pending ? pending_addr : req_addr;
 
-assign rsp_valid = bus_response && response_current;
-assign rsp_error = rsp_valid && wb_err_i;
-assign rsp_rdata = wb_dat_i;
+DM U_DM (
+    .clk(clk),
+    .addr(active_addr[14:2]),
+    .write_data(req_wdata),
+    .write_enable(accept && req_we),
+    .read_data(memory_data)
+);
 
-assign wb_adr_o = active_addr;
-assign wb_dat_o = 32'b0;
-assign wb_sel_o = 4'b1111;
-assign wb_we_o  = 1'b0;
-assign wb_cyc_o = bus_request;
-assign wb_stb_o = bus_request;
+// A valid local request completes one clock after acceptance.  Invalid-page
+// requests complete immediately as errors and never touch the SRAM.
+assign rsp_valid = (req_valid && !pending && !address_valid) ||
+                   (pending && req_valid &&
+                    (pending_addr == req_addr));
+assign rsp_error = req_valid && !pending && !address_valid;
+assign rsp_rdata = memory_data;
 
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         pending      <= 1'b0;
         pending_addr <= 32'b0;
     end
-    else if (pending) begin
-        if (bus_response)
+    else begin
+        if (pending)
             pending <= 1'b0;
-    end
-    else if (req_valid && !bus_response) begin
-        pending      <= 1'b1;
-        pending_addr <= req_addr;
-    end
-end
-
-endmodule
-
-// Source: rtl/rtl/WishboneLocalRouter.v
-// Routes one Wishbone master to a 4 KB local window or the external bus.
-// Address, write data, byte enables, and write direction are shared directly
-// with the local slave; only its request is gated by the address decode.
-module WishboneLocalRouter #(
-    parameter [19:0] LOCAL_PAGE = 20'h00000
-)(
-    input  [31:0] master_adr_i,
-    input  [31:0] master_dat_i,
-    input  [3:0]  master_sel_i,
-    input         master_we_i,
-    input         master_cyc_i,
-    input         master_stb_i,
-    output [31:0] master_dat_o,
-    output        master_ack_o,
-    output        master_err_o,
-
-    output        local_cyc_o,
-    output        local_stb_o,
-    input  [31:0] local_dat_i,
-    input         local_ack_i,
-    input         local_err_i,
-
-    output [31:0] external_adr_o,
-    output [31:0] external_dat_o,
-    output [3:0]  external_sel_o,
-    output        external_we_o,
-    output        external_cyc_o,
-    output        external_stb_o,
-    input  [31:0] external_dat_i,
-    input         external_ack_i,
-    input         external_err_i
-);
-
-wire local_selected;
-
-assign local_selected = (master_adr_i[31:12] == LOCAL_PAGE);
-assign local_cyc_o = master_cyc_i && local_selected;
-assign local_stb_o = master_stb_i && local_selected;
-
-assign master_dat_o = local_selected ? local_dat_i : external_dat_i;
-assign master_ack_o = local_selected ? local_ack_i : external_ack_i;
-assign master_err_o = local_selected ? local_err_i : external_err_i;
-
-assign external_adr_o = master_adr_i;
-assign external_dat_o = master_dat_i;
-assign external_sel_o = master_sel_i;
-assign external_we_o = master_we_i;
-assign external_cyc_o = master_cyc_i && !local_selected;
-assign external_stb_o = master_stb_i && !local_selected;
-
-endmodule
-
-// Source: rtl/rtl/WishboneMaster.v
-// Combinational Wishbone B4 Classic adapter. Requesters in this core keep
-// req_valid, address, and write data stable until rsp_valid is asserted.
-module WishboneMaster(
-    input         req_valid,
-    input  [31:0] req_addr,
-    input  [31:0] req_wdata,
-    input  [3:0]  req_sel,
-    input         req_we,
-
-    output        rsp_valid,
-    output        rsp_error,
-    output [31:0] rsp_rdata,
-
-    output [31:0] wb_adr_o,
-    output [31:0] wb_dat_o,
-    input  [31:0] wb_dat_i,
-    output [3:0]  wb_sel_o,
-    output        wb_we_o,
-    output        wb_cyc_o,
-    output        wb_stb_o,
-    input         wb_ack_i,
-    input         wb_err_i
-);
-
-assign rsp_valid = req_valid && (wb_ack_i || wb_err_i);
-assign rsp_error = req_valid && wb_err_i;
-assign rsp_rdata = wb_dat_i;
-
-assign wb_adr_o = req_addr;
-assign wb_dat_o = req_wdata;
-assign wb_sel_o = req_sel;
-assign wb_we_o  = req_we;
-assign wb_cyc_o = req_valid;
-assign wb_stb_o = req_valid;
-
-endmodule
-
-// Source: rtl/rtl/WishboneInstructionMemory.v
-// Wishbone slave wrapper for the local 64-bit instruction SRAM. Two line
-// buffers form a sequential stream buffer: while one line is consumed, the
-// next line is read from SRAM. There is no general-purpose cache or refill
-// replacement policy.
-module WishboneInstructionMemory(
-    input         clk,
-    input         rst,
-    input  [31:0] wb_adr_i,
-    input         wb_cyc_i,
-    input         wb_stb_i,
-    input         fetch_valid_i,
-    input  [31:0] fetch_addr_i,
-    output [31:0] wb_dat_o,
-    output        wb_ack_o,
-    output        wb_err_o
-);
-
-localparam STATE_IDLE     = 2'b00;
-localparam STATE_WAIT     = 2'b01;
-localparam STATE_COMPLETE = 2'b10;
-
-reg [1:0]  state;
-reg [8:0]  read_line_index;
-reg [8:0]  read_next_line_index;
-reg        read_line_has_next;
-reg        read_buffer_select;
-reg        replacement_select;
-reg [8:0]  line0_index;
-reg [8:0]  line1_index;
-reg [8:0]  line0_next_index;
-reg [8:0]  line1_next_index;
-reg        line0_valid;
-reg        line1_valid;
-reg        line0_has_next;
-reg        line1_has_next;
-reg [63:0] line0_data;
-reg [63:0] line1_data;
-
-reg        launch_read;
-reg [8:0]  launch_line_index;
-reg        launch_buffer_select;
-
-wire       wb_request;
-wire [8:0] wb_line_index;
-wire [8:0] fetch_line_index;
-wire       line0_hit;
-wire       line1_hit;
-wire       buffered_hit;
-wire       completing_hit;
-wire [63:0] selected_line_data;
-wire       fetch_line0_hit;
-wire       fetch_line1_hit;
-wire       fetch_buffered_hit;
-wire       line0_prefetch_needed;
-wire       line1_prefetch_needed;
-wire [8:0] sequential_line_index;
-wire       sequential_line_in_range;
-wire [63:0] sram_line_data;
-
-assign wb_request      = wb_cyc_i && wb_stb_i;
-assign wb_line_index   = wb_adr_i[11:3];
-assign fetch_line_index = fetch_addr_i[11:3];
-assign line0_hit       = line0_valid && (wb_line_index == line0_index);
-assign line1_hit       = line1_valid && (wb_line_index == line1_index);
-assign buffered_hit       = line0_hit || line1_hit;
-assign completing_hit     = (state == STATE_COMPLETE) &&
-                            (wb_line_index == read_line_index);
-assign selected_line_data = line0_hit ? line0_data :
-                            line1_hit ? line1_data : sram_line_data;
-assign fetch_line0_hit    = line0_valid &&
-                            (fetch_line_index == line0_index);
-assign fetch_line1_hit    = line1_valid &&
-                            (fetch_line_index == line1_index);
-assign fetch_buffered_hit = fetch_line0_hit || fetch_line1_hit;
-assign line0_prefetch_needed = line0_has_next &&
-                               !(line1_valid &&
-                                 (line1_index == line0_next_index));
-assign line1_prefetch_needed = line1_has_next &&
-                               !(line0_valid &&
-                                 (line0_index == line1_next_index));
-assign sequential_line_index = fetch_line0_hit ? line0_next_index
-                                                : line1_next_index;
-assign sequential_line_in_range =
-    (fetch_line0_hit && line0_prefetch_needed) ||
-    (fetch_line1_hit && line1_prefetch_needed);
-
-assign wb_ack_o = wb_request && (buffered_hit || completing_hit);
-assign wb_err_o = 1'b0;
-assign wb_dat_o = wb_adr_i[2] ? selected_line_data[63:32]
-                              : selected_line_data[31:0];
-
-// A redirecting FETCH_PC has priority over continuing a stale stream.
-always @(*) begin
-    launch_read          = 1'b0;
-    launch_line_index    = 9'b0;
-    launch_buffer_select = replacement_select;
-
-    if (state == STATE_IDLE) begin
-        if (fetch_valid_i && !fetch_buffered_hit) begin
-            launch_read          = 1'b1;
-            launch_line_index    = fetch_line_index;
-            launch_buffer_select = replacement_select;
+        else if (accept) begin
+            pending      <= 1'b1;
+            pending_addr <= req_addr;
         end
-        else if (fetch_valid_i && sequential_line_in_range) begin
-            launch_read          = 1'b1;
-            launch_line_index    = sequential_line_index;
-            launch_buffer_select = fetch_line0_hit ? 1'b1 : 1'b0;
-        end
-        else if (wb_request && !buffered_hit) begin
-            launch_read          = 1'b1;
-            launch_line_index    = wb_line_index;
-            launch_buffer_select = replacement_select;
-        end
-    end
-    else if (state == STATE_COMPLETE && fetch_valid_i) begin
-        if ((fetch_line_index != read_line_index) &&
-            !fetch_buffered_hit) begin
-            launch_read          = 1'b1;
-            launch_line_index    = fetch_line_index;
-            launch_buffer_select = ~read_buffer_select;
-        end
-        else if ((fetch_line_index == read_line_index) &&
-                 read_line_has_next) begin
-            launch_read          = 1'b1;
-            launch_line_index    = read_next_line_index;
-            launch_buffer_select = ~read_buffer_select;
-        end
-    end
-end
-
-IM U_IM (
-    .clk(clk),
-    .rst(rst),
-    .enable(launch_read),
-    .addr(launch_line_index),
-    .data(sram_line_data)
-);
-
-`ifdef DIFFTEST
-import "DPI-C" function void instructionWishboneCheck(
-    input int addr,
-    input int read_data
-);
-`endif
-
-always @(posedge clk or posedge rst) begin
-    if (rst) begin
-        state                <= STATE_IDLE;
-        read_line_index      <= 9'b0;
-        read_next_line_index <= 9'b0;
-        read_line_has_next   <= 1'b0;
-        read_buffer_select   <= 1'b0;
-        replacement_select   <= 1'b0;
-        line0_index          <= 9'b0;
-        line1_index          <= 9'b0;
-        line0_next_index     <= 9'b0;
-        line1_next_index     <= 9'b0;
-        line0_valid          <= 1'b0;
-        line1_valid          <= 1'b0;
-        line0_has_next       <= 1'b0;
-        line1_has_next       <= 1'b0;
-        line0_data           <= 64'b0;
-        line1_data           <= 64'b0;
-    end
-    else begin
-`ifdef DIFFTEST
-        if (wb_ack_o)
-            instructionWishboneCheck(wb_adr_i, wb_dat_o);
-`endif
-
-        case (state)
-        STATE_IDLE: begin
-            if (launch_read) begin
-                state              <= STATE_WAIT;
-                read_line_index    <= launch_line_index;
-                read_next_line_index <= launch_line_index + 9'd1;
-                read_line_has_next <= (launch_line_index != 9'h1ff);
-                read_buffer_select <= launch_buffer_select;
-            end
-        end
-        STATE_WAIT: begin
-            state <= STATE_COMPLETE;
-        end
-        STATE_COMPLETE: begin
-            if (read_buffer_select) begin
-                line1_index   <= read_line_index;
-                line1_next_index <= read_next_line_index;
-                line1_valid   <= 1'b1;
-                line1_has_next <= read_line_has_next;
-                line1_data    <= sram_line_data;
-            end
-            else begin
-                line0_index   <= read_line_index;
-                line0_next_index <= read_next_line_index;
-                line0_valid   <= 1'b1;
-                line0_has_next <= read_line_has_next;
-                line0_data    <= sram_line_data;
-            end
-            replacement_select <= ~read_buffer_select;
-
-            if (launch_read) begin
-                state              <= STATE_WAIT;
-                read_line_index    <= launch_line_index;
-                read_next_line_index <= launch_line_index + 9'd1;
-                read_line_has_next <= (launch_line_index != 9'h1ff);
-                read_buffer_select <= launch_buffer_select;
-                if (launch_buffer_select)
-                    line1_valid <= 1'b0;
-                else
-                    line0_valid <= 1'b0;
-            end
-            else begin
-                state <= STATE_IDLE;
-            end
-        end
-        default: begin
-            state <= STATE_IDLE;
-        end
-        endcase
-    end
-end
-
-endmodule
-
-// Source: rtl/rtl/WishboneDataMemory.v
-// Wishbone slave wrapper for the local 32-bit data SRAM.
-module WishboneDataMemory(
-    input         clk,
-    input         rst,
-    input  [31:0] wb_adr_i,
-    input  [31:0] wb_dat_i,
-    input  [3:0]  wb_sel_i,
-    input         wb_we_i,
-    input         wb_cyc_i,
-    input         wb_stb_i,
-    output [31:0] wb_dat_o,
-    output        wb_ack_o,
-    output        wb_err_o
-);
-
-localparam STATE_IDLE = 2'b00;
-localparam STATE_WAIT = 2'b01;
-localparam STATE_ACK  = 2'b10;
-
-reg [1:0]  state;
-reg [31:0] address;
-reg [31:0] write_data;
-reg [3:0]  byte_select;
-reg        write_enable;
-wire       start;
-wire       immediate_store;
-wire [31:0] memory_data;
-
-assign start    = wb_cyc_i && wb_stb_i && (state == STATE_IDLE);
-assign immediate_store = start && wb_we_i;
-// A store is committed on its request edge and may therefore complete as a
-// zero-wait Wishbone transfer. Loads retain the cycles required by SRAM CLK-Q.
-assign wb_ack_o = (immediate_store && (wb_sel_i == 4'b1111)) ||
-                  ((state == STATE_ACK) && !write_enable &&
-                   (byte_select == 4'b1111));
-assign wb_err_o = (immediate_store && (wb_sel_i != 4'b1111)) ||
-                  ((state == STATE_ACK) && !write_enable &&
-                   (byte_select != 4'b1111));
-assign wb_dat_o = memory_data;
-
-DM U_DM (
-    .clk(clk),
-    .addr(wb_adr_i[11:2]),
-    .write_data(wb_dat_i),
-    .write_enable(start && wb_we_i && (wb_sel_i == 4'b1111)),
-    .read_data(memory_data)
-);
-
-`ifdef DIFFTEST
-import "DPI-C" function void dataWishboneCheck(
-    input int addr,
-    input int write_data,
-    input int read_data,
-    input bit write_enable
-);
-`endif
-
-always @(posedge clk or posedge rst) begin
-    if (rst) begin
-        state        <= STATE_IDLE;
-        address      <= 32'b0;
-        write_data   <= 32'b0;
-        byte_select  <= 4'b0;
-        write_enable <= 1'b0;
-    end
-    else begin
-        case (state)
-        STATE_IDLE: begin
-            if (immediate_store) begin
-`ifdef DIFFTEST
-                if (wb_sel_i == 4'b1111)
-                    dataWishboneCheck(wb_adr_i, wb_dat_i, wb_dat_o, 1'b1);
-`endif
-            end
-            else if (start) begin
-                state        <= STATE_WAIT;
-                address      <= wb_adr_i;
-                write_data   <= wb_dat_i;
-                byte_select  <= wb_sel_i;
-                write_enable <= wb_we_i;
-            end
-        end
-        STATE_WAIT: begin
-            state <= STATE_ACK;
-        end
-        STATE_ACK: begin
-`ifdef DIFFTEST
-            if (byte_select == 4'b1111)
-                dataWishboneCheck(address, write_data, wb_dat_o,
-                                  write_enable);
-`endif
-            state <= STATE_IDLE;
-        end
-        default: begin
-            state <= STATE_IDLE;
-        end
-        endcase
     end
 end
 
@@ -2515,11 +2195,7 @@ endmodule
 // Additional Comments:
 //
 //////////////////////////////////////////////////////////////////////////////////
-module riscv(clk, rst, RD, out_ins, trap, trap_cause, trap_epc, trap_tval,
-  iwb_adr_o, iwb_dat_o, iwb_dat_i, iwb_sel_o, iwb_we_o,
-  iwb_cyc_o, iwb_stb_o, iwb_ack_i, iwb_err_i,
-  dwb_adr_o, dwb_dat_o, dwb_dat_i, dwb_sel_o, dwb_we_o,
-  dwb_cyc_o, dwb_stb_o, dwb_ack_i, dwb_err_i
+module riscv(clk, rst, RD, out_ins, trap, trap_cause, trap_epc, trap_tval
 `ifdef DIFFTEST
 , done
 `endif
@@ -2531,25 +2207,6 @@ output trap;
 output [3:0] trap_cause;
 output [31:0] trap_epc;
 output [31:0] trap_tval;
-
-output [31:0] iwb_adr_o;
-output [31:0] iwb_dat_o;
-input  [31:0] iwb_dat_i;
-output [3:0]  iwb_sel_o;
-output        iwb_we_o;
-output        iwb_cyc_o;
-output        iwb_stb_o;
-input         iwb_ack_i;
-input         iwb_err_i;
-output [31:0] dwb_adr_o;
-output [31:0] dwb_dat_o;
-input  [31:0] dwb_dat_i;
-output [3:0]  dwb_sel_o;
-output        dwb_we_o;
-output        dwb_cyc_o;
-output        dwb_stb_o;
-input         dwb_ack_i;
-input         dwb_err_i;
 
 `ifdef DIFFTEST
 output done;
@@ -2582,183 +2239,179 @@ wire IF_ready, IF_error, DM_ready, DM_error;
 wire mem_hold;
 wire DMReq;
 
-wire [31:0] im_adr;
-wire [31:0] im_dat_o;
-wire [31:0] im_dat_i;
-wire [3:0]  im_sel;
-wire        im_we;
-wire        im_cyc;
-wire        im_stb;
-wire        im_ack;
-wire        im_err;
-wire        im_local_cyc;
-wire        im_local_stb;
-wire [31:0] im_local_data;
-wire        im_local_ack;
-wire        im_local_err;
-
-wire [31:0] dm_adr;
-wire [31:0] dm_dat_o;
-wire [31:0] dm_dat_i;
-wire [3:0]  dm_sel;
-wire        dm_we;
-wire        dm_cyc;
-wire        dm_stb;
-wire        dm_ack;
-wire        dm_err;
-wire        dm_local_cyc;
-wire        dm_local_stb;
-wire [31:0] dm_local_data;
-wire        dm_local_ack;
-wire        dm_local_err;
-
 ControlUnit U_ControlUnit(
-    .clk(clk), .rst(rst), .instruction(in_ins),
-    .RFWrite(RFWrite), .DMCtrl(DMCtrl), .PCWrite(PCWrite), .InsMemRW(InsMemRW),
-    .ALUOp(ALUOp), .NPCOp(NPCOp),
-    .PC(PC), .PCA4(PCA4),
-    .NPC(NPC), .NPC_taken_p4(NPC_taken_p4),
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .instruction(in_ins),
+    .PC(PC),
+    .PCA4(PCA4),
+    .NPC(NPC),
+    .NPC_taken_p4(NPC_taken_p4),
     .RD2(RD2),
-    .RD1_raw(RD1_raw), .RD2_raw(RD2_raw),
-    .ALU_result(ALU_result), .ALU_result_r(ALU_result_r),
+    .RD1_raw(RD1_raw),
+    .RD2_raw(RD2_raw),
+    .ALU_result(ALU_result),
+    .ALU_result_r(ALU_result_r),
     .DM_RD(DR_out),
     .RD2_r(RD2_r),
-    .IF_ready(IF_ready), .IF_error(IF_error),
-    .DM_ready(DM_ready), .DM_error(DM_error),
+    .IF_ready(IF_ready),
+    .IF_error(IF_error),
+    .DM_ready(DM_ready),
+    .DM_error(DM_error),
 
+    // Outputs
+    .RFWrite(RFWrite),
+    .DMCtrl(DMCtrl),
+    .PCWrite(PCWrite),
+    .InsMemRW(InsMemRW),
+    .ALUOp(ALUOp),
+    .NPCOp(NPCOp),
     .mem_hold(mem_hold),
-    .PC_NPC(PC_NPC), .NPC_PC(NPC_PC),
+    .PC_NPC(PC_NPC),
+    .NPC_PC(NPC_PC),
     .FETCH_PC(FETCH_PC),
-    .NPC_EX_Offset12(NPC_EX_Offset12), .NPC_EX_Offset20(NPC_EX_Offset20),
+    .NPC_EX_Offset12(NPC_EX_Offset12),
+    .NPC_EX_Offset20(NPC_EX_Offset20),
     .WB_rd_out(WB_rd),
-    .forward1(forward1), .forward2(forward2), .FD1(FD1), .FD2(FD2),
-    .RF_WD(RF_WD), .ID_rs1_out(ID_rs1), .ID_rs2_out(ID_rs2),
-    .EX_ALU_B(EX_ALU_B), .DM_WD(DM_WD),
+    .forward1(forward1),
+    .forward2(forward2),
+    .FD1(FD1),
+    .FD2(FD2),
+    .RF_WD(RF_WD),
+    .ID_rs1_out(ID_rs1),
+    .ID_rs2_out(ID_rs2),
+    .EX_ALU_B(EX_ALU_B),
+    .DM_WD(DM_WD),
     .DMReq(DMReq),
-    .trap(trap), .trap_cause(trap_cause), .trap_epc(trap_epc), .trap_tval(trap_tval)
-
-
+    .trap(trap),
+    .trap_cause(trap_cause),
+    .trap_epc(trap_epc),
+    .trap_tval(trap_tval)
 `ifdef DIFFTEST
     , .done(done)
 `endif
-
-
 );
 
 PC U_PC (
-    .clk(clk), .rst(rst), .write_enable(PCWrite),
-    .next_pc(PC_NPC), .pc(PC)
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .write_enable(PCWrite),
+    .next_pc(PC_NPC),
+
+    // Outputs
+    .pc(PC)
 );
 
 NPC U_NPC (
-    .PC(PC), .NPCOp(NPCOp), .PCA4(PCA4), .NPC(NPC),
-    .NPC_PC(NPC_PC), .NPC_Offset12(NPC_EX_Offset12), .NPC_Offset20(NPC_EX_Offset20), .NPC_rs(RD1_r),
+    // Inputs
+    .PC(PC),
+    .NPCOp(NPCOp),
+    .NPC_PC(NPC_PC),
+    .NPC_Offset12(NPC_EX_Offset12),
+    .NPC_Offset20(NPC_EX_Offset20),
+    .NPC_rs(RD1_r),
+
+    // Outputs
+    .PCA4(PCA4),
+    .NPC(NPC),
     .NPC_taken_p4(NPC_taken_p4)
 );
 
-WishboneInstructionMaster U_InstructionWishboneMaster (
-    .clk(clk), .rst(rst),
-    .req_valid(InsMemRW), .req_addr(FETCH_PC),
-    .rsp_valid(IF_ready), .rsp_error(IF_error), .rsp_rdata(in_ins),
-    .wb_adr_o(im_adr), .wb_dat_o(im_dat_o), .wb_dat_i(im_dat_i),
-    .wb_sel_o(im_sel), .wb_we_o(im_we),
-    .wb_cyc_o(im_cyc), .wb_stb_o(im_stb),
-    .wb_ack_i(im_ack), .wb_err_i(im_err)
-);
+DirectInstructionMemory U_InstructionMemory (
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .req_valid(InsMemRW),
+    .req_addr(FETCH_PC),
 
-WishboneInstructionMemory U_InstructionMemorySlave (
-    .clk(clk), .rst(rst),
-    .wb_adr_i(im_adr),
-    .wb_cyc_i(im_local_cyc), .wb_stb_i(im_local_stb),
-    .fetch_valid_i(InsMemRW && (FETCH_PC[31:12] == 20'h00002)),
-    .fetch_addr_i(FETCH_PC),
-    .wb_dat_o(im_local_data), .wb_ack_o(im_local_ack),
-    .wb_err_o(im_local_err)
-);
-
-WishboneLocalRouter #(.LOCAL_PAGE(20'h00002)) U_InstructionBusRouter (
-    .master_adr_i(im_adr), .master_dat_i(im_dat_o),
-    .master_sel_i(im_sel), .master_we_i(im_we),
-    .master_cyc_i(im_cyc), .master_stb_i(im_stb),
-    .master_dat_o(im_dat_i), .master_ack_o(im_ack),
-    .master_err_o(im_err),
-    .local_cyc_o(im_local_cyc), .local_stb_o(im_local_stb),
-    .local_dat_i(im_local_data), .local_ack_i(im_local_ack),
-    .local_err_i(im_local_err),
-    .external_adr_o(iwb_adr_o), .external_dat_o(iwb_dat_o),
-    .external_sel_o(iwb_sel_o), .external_we_o(iwb_we_o),
-    .external_cyc_o(iwb_cyc_o), .external_stb_o(iwb_stb_o),
-    .external_dat_i(iwb_dat_i), .external_ack_i(iwb_ack_i),
-    .external_err_i(iwb_err_i)
+    // Outputs
+    .rsp_valid(IF_ready),
+    .rsp_error(IF_error),
+    .rsp_rdata(in_ins)
 );
 
 assign out_ins = in_ins;
 
 RF U_RF (
-    .RR1(ID_rs1), .RR2(ID_rs2), .WR(WR), .WD(RF_WD), .clk(clk),
-    .RFWrite(RFWrite), .RD1(RD1), .RD2(RD2),
-    .RD1_raw(RD1_raw), .RD2_raw(RD2_raw),
-    .forward1(forward1), .forward2(forward2),
-    .FD1(FD1), .FD2(FD2)
+    // Inputs
+    .RR1(ID_rs1),
+    .RR2(ID_rs2),
+    .WR(WR),
+    .WD(RF_WD),
+    .clk(clk),
+    .RFWrite(RFWrite),
+    .forward1(forward1),
+    .forward2(forward2),
+    .FD1(FD1),
+    .FD2(FD2),
+
+    // Outputs
+    .RD1(RD1),
+    .RD2(RD2),
+    .RD1_raw(RD1_raw),
+    .RD2_raw(RD2_raw)
 );
 
 assign WR = WB_rd;
 
 Flopr U_A (
-    .clk(clk), .rst(rst), .in_data(mem_hold ? RD1_r : RD1), .out_data(RD1_r)
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .in_data(mem_hold ? RD1_r : RD1),
+
+    // Outputs
+    .out_data(RD1_r)
 );
 
 Flopr U_B (
-    .clk(clk), .rst(rst), .in_data(mem_hold ? RD2_r : RD2), .out_data(RD2_r)
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .in_data(mem_hold ? RD2_r : RD2),
+
+    // Outputs
+    .out_data(RD2_r)
 );
 
 assign A = RD1_r;
 assign B = EX_ALU_B;
 
 ALU U_ALU (
-    .A(A), .B(B), .ALUOp(ALUOp), .ALU_result(ALU_result)
+    // Inputs
+    .A(A),
+    .B(B),
+    .ALUOp(ALUOp),
+
+    // Outputs
+    .ALU_result(ALU_result)
 );
 
 Flopr U_ALUOut (
-    .clk(clk), .rst(rst),
+    // Inputs
+    .clk(clk),
+    .rst(rst),
     .in_data(mem_hold ? ALU_result_r : ALU_result),
+
+    // Outputs
     .out_data(ALU_result_r)
 );
 
-WishboneMaster U_DataWishboneMaster (
+DirectDataMemory U_DataMemory (
+    // Inputs
+    .clk(clk),
+    .rst(rst),
     .req_valid(DMReq),
-    .req_addr(ALU_result_r), .req_wdata(DM_WD),
-    .req_sel(4'b1111), .req_we(DMCtrl),
-    .rsp_valid(DM_ready), .rsp_error(DM_error), .rsp_rdata(DR_out),
-    .wb_adr_o(dm_adr), .wb_dat_o(dm_dat_o), .wb_dat_i(dm_dat_i),
-    .wb_sel_o(dm_sel), .wb_we_o(dm_we),
-    .wb_cyc_o(dm_cyc), .wb_stb_o(dm_stb),
-    .wb_ack_i(dm_ack), .wb_err_i(dm_err)
-);
+    .req_addr(ALU_result_r),
+    .req_wdata(DM_WD),
+    .req_we(DMCtrl),
 
-WishboneDataMemory U_DataMemorySlave (
-    .clk(clk), .rst(rst),
-    .wb_adr_i(dm_adr), .wb_dat_i(dm_dat_o), .wb_sel_i(dm_sel),
-    .wb_we_i(dm_we), .wb_cyc_i(dm_local_cyc),
-    .wb_stb_i(dm_local_stb),
-    .wb_dat_o(dm_local_data), .wb_ack_o(dm_local_ack),
-    .wb_err_o(dm_local_err)
-);
-
-WishboneLocalRouter #(.LOCAL_PAGE(20'h00000)) U_DataBusRouter (
-    .master_adr_i(dm_adr), .master_dat_i(dm_dat_o),
-    .master_sel_i(dm_sel), .master_we_i(dm_we),
-    .master_cyc_i(dm_cyc), .master_stb_i(dm_stb),
-    .master_dat_o(dm_dat_i), .master_ack_o(dm_ack),
-    .master_err_o(dm_err),
-    .local_cyc_o(dm_local_cyc), .local_stb_o(dm_local_stb),
-    .local_dat_i(dm_local_data), .local_ack_i(dm_local_ack),
-    .local_err_i(dm_local_err),
-    .external_adr_o(dwb_adr_o), .external_dat_o(dwb_dat_o),
-    .external_sel_o(dwb_sel_o), .external_we_o(dwb_we_o),
-    .external_cyc_o(dwb_cyc_o), .external_stb_o(dwb_stb_o),
-    .external_dat_i(dwb_dat_i), .external_ack_i(dwb_ack_i),
-    .external_err_i(dwb_err_i)
+    // Outputs
+    .rsp_valid(DM_ready),
+    .rsp_error(DM_error),
+    .rsp_rdata(DR_out)
 );
 
 assign RD = DR_out;

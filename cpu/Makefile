@@ -89,20 +89,6 @@ run-rtl: clean
 flatten:
 	perl $(RTL_FLATTEN)
 
-test-wishbone:
-	@mkdir -p $(BUILD_DIR)
-	$(IVERILOG) -g2012 -I$(RTL_INC_DIR) -I$(RTL_TREE_DIR) \
-		-o $(BUILD_DIR)/WishboneInstructionMaster_tb \
-		$(RTL_TREE_DIR)/WishboneInstructionMaster.v \
-		$(ROOT)/rtl/tb/WishboneInstructionMaster_tb.v
-	$(VVP) $(BUILD_DIR)/WishboneInstructionMaster_tb
-	$(IVERILOG) -g2012 -I$(RTL_INC_DIR) -I$(RTL_TREE_DIR) \
-		-o $(BUILD_DIR)/WishboneInstructionMemory_tb \
-		$(RTL_TREE_DIR)/IM.v \
-		$(RTL_TREE_DIR)/WishboneInstructionMemory.v \
-		$(ROOT)/rtl/tb/WishboneInstructionMemory_tb.v
-	$(VVP) $(BUILD_DIR)/WishboneInstructionMemory_tb
-
 # ===================== 清理 =====================
 clean:
 	rm -rf $(BUILD_DIR) $(OBJ_DIR) *.vcd
@@ -116,4 +102,4 @@ print:
 	@echo "SEMU SRCS:"
 	@echo $(SEMU_SRCS)
 
-.PHONY: all run single run-single rtl run-rtl flatten test-wishbone clean print
+.PHONY: all run single run-single rtl run-rtl flatten clean print

@@ -20,11 +20,7 @@
 // Additional Comments:
 //
 //////////////////////////////////////////////////////////////////////////////////
-module riscv(clk, rst, RD, out_ins, trap, trap_cause, trap_epc, trap_tval,
-  iwb_adr_o, iwb_dat_o, iwb_dat_i, iwb_sel_o, iwb_we_o,
-  iwb_cyc_o, iwb_stb_o, iwb_ack_i, iwb_err_i,
-  dwb_adr_o, dwb_dat_o, dwb_dat_i, dwb_sel_o, dwb_we_o,
-  dwb_cyc_o, dwb_stb_o, dwb_ack_i, dwb_err_i
+module riscv(clk, rst, RD, out_ins, trap, trap_cause, trap_epc, trap_tval
 `ifdef DIFFTEST
 , done
 `endif
@@ -36,25 +32,6 @@ output trap;
 output [3:0] trap_cause;
 output [31:0] trap_epc;
 output [31:0] trap_tval;
-
-output [31:0] iwb_adr_o;
-output [31:0] iwb_dat_o;
-input  [31:0] iwb_dat_i;
-output [3:0]  iwb_sel_o;
-output        iwb_we_o;
-output        iwb_cyc_o;
-output        iwb_stb_o;
-input         iwb_ack_i;
-input         iwb_err_i;
-output [31:0] dwb_adr_o;
-output [31:0] dwb_dat_o;
-input  [31:0] dwb_dat_i;
-output [3:0]  dwb_sel_o;
-output        dwb_we_o;
-output        dwb_cyc_o;
-output        dwb_stb_o;
-input         dwb_ack_i;
-input         dwb_err_i;
 
 `ifdef DIFFTEST
 output done;
@@ -87,183 +64,179 @@ wire IF_ready, IF_error, DM_ready, DM_error;
 wire mem_hold;
 wire DMReq;
 
-wire [31:0] im_adr;
-wire [31:0] im_dat_o;
-wire [31:0] im_dat_i;
-wire [3:0]  im_sel;
-wire        im_we;
-wire        im_cyc;
-wire        im_stb;
-wire        im_ack;
-wire        im_err;
-wire        im_local_cyc;
-wire        im_local_stb;
-wire [31:0] im_local_data;
-wire        im_local_ack;
-wire        im_local_err;
-
-wire [31:0] dm_adr;
-wire [31:0] dm_dat_o;
-wire [31:0] dm_dat_i;
-wire [3:0]  dm_sel;
-wire        dm_we;
-wire        dm_cyc;
-wire        dm_stb;
-wire        dm_ack;
-wire        dm_err;
-wire        dm_local_cyc;
-wire        dm_local_stb;
-wire [31:0] dm_local_data;
-wire        dm_local_ack;
-wire        dm_local_err;
-
 ControlUnit U_ControlUnit(
-    .clk(clk), .rst(rst), .instruction(in_ins),
-    .RFWrite(RFWrite), .DMCtrl(DMCtrl), .PCWrite(PCWrite), .InsMemRW(InsMemRW),
-    .ALUOp(ALUOp), .NPCOp(NPCOp),
-    .PC(PC), .PCA4(PCA4),
-    .NPC(NPC), .NPC_taken_p4(NPC_taken_p4),
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .instruction(in_ins),
+    .PC(PC),
+    .PCA4(PCA4),
+    .NPC(NPC),
+    .NPC_taken_p4(NPC_taken_p4),
     .RD2(RD2),
-    .RD1_raw(RD1_raw), .RD2_raw(RD2_raw),
-    .ALU_result(ALU_result), .ALU_result_r(ALU_result_r),
+    .RD1_raw(RD1_raw),
+    .RD2_raw(RD2_raw),
+    .ALU_result(ALU_result),
+    .ALU_result_r(ALU_result_r),
     .DM_RD(DR_out),
     .RD2_r(RD2_r),
-    .IF_ready(IF_ready), .IF_error(IF_error),
-    .DM_ready(DM_ready), .DM_error(DM_error),
+    .IF_ready(IF_ready),
+    .IF_error(IF_error),
+    .DM_ready(DM_ready),
+    .DM_error(DM_error),
 
+    // Outputs
+    .RFWrite(RFWrite),
+    .DMCtrl(DMCtrl),
+    .PCWrite(PCWrite),
+    .InsMemRW(InsMemRW),
+    .ALUOp(ALUOp),
+    .NPCOp(NPCOp),
     .mem_hold(mem_hold),
-    .PC_NPC(PC_NPC), .NPC_PC(NPC_PC),
+    .PC_NPC(PC_NPC),
+    .NPC_PC(NPC_PC),
     .FETCH_PC(FETCH_PC),
-    .NPC_EX_Offset12(NPC_EX_Offset12), .NPC_EX_Offset20(NPC_EX_Offset20),
+    .NPC_EX_Offset12(NPC_EX_Offset12),
+    .NPC_EX_Offset20(NPC_EX_Offset20),
     .WB_rd_out(WB_rd),
-    .forward1(forward1), .forward2(forward2), .FD1(FD1), .FD2(FD2),
-    .RF_WD(RF_WD), .ID_rs1_out(ID_rs1), .ID_rs2_out(ID_rs2),
-    .EX_ALU_B(EX_ALU_B), .DM_WD(DM_WD),
+    .forward1(forward1),
+    .forward2(forward2),
+    .FD1(FD1),
+    .FD2(FD2),
+    .RF_WD(RF_WD),
+    .ID_rs1_out(ID_rs1),
+    .ID_rs2_out(ID_rs2),
+    .EX_ALU_B(EX_ALU_B),
+    .DM_WD(DM_WD),
     .DMReq(DMReq),
-    .trap(trap), .trap_cause(trap_cause), .trap_epc(trap_epc), .trap_tval(trap_tval)
-
-
+    .trap(trap),
+    .trap_cause(trap_cause),
+    .trap_epc(trap_epc),
+    .trap_tval(trap_tval)
 `ifdef DIFFTEST
     , .done(done)
 `endif
-
-
 );
 
 PC U_PC (
-    .clk(clk), .rst(rst), .write_enable(PCWrite),
-    .next_pc(PC_NPC), .pc(PC)
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .write_enable(PCWrite),
+    .next_pc(PC_NPC),
+
+    // Outputs
+    .pc(PC)
 );
 
 NPC U_NPC (
-    .PC(PC), .NPCOp(NPCOp), .PCA4(PCA4), .NPC(NPC),
-    .NPC_PC(NPC_PC), .NPC_Offset12(NPC_EX_Offset12), .NPC_Offset20(NPC_EX_Offset20), .NPC_rs(RD1_r),
+    // Inputs
+    .PC(PC),
+    .NPCOp(NPCOp),
+    .NPC_PC(NPC_PC),
+    .NPC_Offset12(NPC_EX_Offset12),
+    .NPC_Offset20(NPC_EX_Offset20),
+    .NPC_rs(RD1_r),
+
+    // Outputs
+    .PCA4(PCA4),
+    .NPC(NPC),
     .NPC_taken_p4(NPC_taken_p4)
 );
 
-WishboneInstructionMaster U_InstructionWishboneMaster (
-    .clk(clk), .rst(rst),
-    .req_valid(InsMemRW), .req_addr(FETCH_PC),
-    .rsp_valid(IF_ready), .rsp_error(IF_error), .rsp_rdata(in_ins),
-    .wb_adr_o(im_adr), .wb_dat_o(im_dat_o), .wb_dat_i(im_dat_i),
-    .wb_sel_o(im_sel), .wb_we_o(im_we),
-    .wb_cyc_o(im_cyc), .wb_stb_o(im_stb),
-    .wb_ack_i(im_ack), .wb_err_i(im_err)
-);
+DirectInstructionMemory U_InstructionMemory (
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .req_valid(InsMemRW),
+    .req_addr(FETCH_PC),
 
-WishboneInstructionMemory U_InstructionMemorySlave (
-    .clk(clk), .rst(rst),
-    .wb_adr_i(im_adr),
-    .wb_cyc_i(im_local_cyc), .wb_stb_i(im_local_stb),
-    .fetch_valid_i(InsMemRW && (FETCH_PC[31:12] == 20'h00002)),
-    .fetch_addr_i(FETCH_PC),
-    .wb_dat_o(im_local_data), .wb_ack_o(im_local_ack),
-    .wb_err_o(im_local_err)
-);
-
-WishboneLocalRouter #(.LOCAL_PAGE(20'h00002)) U_InstructionBusRouter (
-    .master_adr_i(im_adr), .master_dat_i(im_dat_o),
-    .master_sel_i(im_sel), .master_we_i(im_we),
-    .master_cyc_i(im_cyc), .master_stb_i(im_stb),
-    .master_dat_o(im_dat_i), .master_ack_o(im_ack),
-    .master_err_o(im_err),
-    .local_cyc_o(im_local_cyc), .local_stb_o(im_local_stb),
-    .local_dat_i(im_local_data), .local_ack_i(im_local_ack),
-    .local_err_i(im_local_err),
-    .external_adr_o(iwb_adr_o), .external_dat_o(iwb_dat_o),
-    .external_sel_o(iwb_sel_o), .external_we_o(iwb_we_o),
-    .external_cyc_o(iwb_cyc_o), .external_stb_o(iwb_stb_o),
-    .external_dat_i(iwb_dat_i), .external_ack_i(iwb_ack_i),
-    .external_err_i(iwb_err_i)
+    // Outputs
+    .rsp_valid(IF_ready),
+    .rsp_error(IF_error),
+    .rsp_rdata(in_ins)
 );
 
 assign out_ins = in_ins;
 
 RF U_RF (
-    .RR1(ID_rs1), .RR2(ID_rs2), .WR(WR), .WD(RF_WD), .clk(clk),
-    .RFWrite(RFWrite), .RD1(RD1), .RD2(RD2),
-    .RD1_raw(RD1_raw), .RD2_raw(RD2_raw),
-    .forward1(forward1), .forward2(forward2),
-    .FD1(FD1), .FD2(FD2)
+    // Inputs
+    .RR1(ID_rs1),
+    .RR2(ID_rs2),
+    .WR(WR),
+    .WD(RF_WD),
+    .clk(clk),
+    .RFWrite(RFWrite),
+    .forward1(forward1),
+    .forward2(forward2),
+    .FD1(FD1),
+    .FD2(FD2),
+
+    // Outputs
+    .RD1(RD1),
+    .RD2(RD2),
+    .RD1_raw(RD1_raw),
+    .RD2_raw(RD2_raw)
 );
 
 assign WR = WB_rd;
 
 Flopr U_A (
-    .clk(clk), .rst(rst), .in_data(mem_hold ? RD1_r : RD1), .out_data(RD1_r)
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .in_data(mem_hold ? RD1_r : RD1),
+
+    // Outputs
+    .out_data(RD1_r)
 );
 
 Flopr U_B (
-    .clk(clk), .rst(rst), .in_data(mem_hold ? RD2_r : RD2), .out_data(RD2_r)
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .in_data(mem_hold ? RD2_r : RD2),
+
+    // Outputs
+    .out_data(RD2_r)
 );
 
 assign A = RD1_r;
 assign B = EX_ALU_B;
 
 ALU U_ALU (
-    .A(A), .B(B), .ALUOp(ALUOp), .ALU_result(ALU_result)
+    // Inputs
+    .A(A),
+    .B(B),
+    .ALUOp(ALUOp),
+
+    // Outputs
+    .ALU_result(ALU_result)
 );
 
 Flopr U_ALUOut (
-    .clk(clk), .rst(rst),
+    // Inputs
+    .clk(clk),
+    .rst(rst),
     .in_data(mem_hold ? ALU_result_r : ALU_result),
+
+    // Outputs
     .out_data(ALU_result_r)
 );
 
-WishboneMaster U_DataWishboneMaster (
+DirectDataMemory U_DataMemory (
+    // Inputs
+    .clk(clk),
+    .rst(rst),
     .req_valid(DMReq),
-    .req_addr(ALU_result_r), .req_wdata(DM_WD),
-    .req_sel(4'b1111), .req_we(DMCtrl),
-    .rsp_valid(DM_ready), .rsp_error(DM_error), .rsp_rdata(DR_out),
-    .wb_adr_o(dm_adr), .wb_dat_o(dm_dat_o), .wb_dat_i(dm_dat_i),
-    .wb_sel_o(dm_sel), .wb_we_o(dm_we),
-    .wb_cyc_o(dm_cyc), .wb_stb_o(dm_stb),
-    .wb_ack_i(dm_ack), .wb_err_i(dm_err)
-);
+    .req_addr(ALU_result_r),
+    .req_wdata(DM_WD),
+    .req_we(DMCtrl),
 
-WishboneDataMemory U_DataMemorySlave (
-    .clk(clk), .rst(rst),
-    .wb_adr_i(dm_adr), .wb_dat_i(dm_dat_o), .wb_sel_i(dm_sel),
-    .wb_we_i(dm_we), .wb_cyc_i(dm_local_cyc),
-    .wb_stb_i(dm_local_stb),
-    .wb_dat_o(dm_local_data), .wb_ack_o(dm_local_ack),
-    .wb_err_o(dm_local_err)
-);
-
-WishboneLocalRouter #(.LOCAL_PAGE(20'h00000)) U_DataBusRouter (
-    .master_adr_i(dm_adr), .master_dat_i(dm_dat_o),
-    .master_sel_i(dm_sel), .master_we_i(dm_we),
-    .master_cyc_i(dm_cyc), .master_stb_i(dm_stb),
-    .master_dat_o(dm_dat_i), .master_ack_o(dm_ack),
-    .master_err_o(dm_err),
-    .local_cyc_o(dm_local_cyc), .local_stb_o(dm_local_stb),
-    .local_dat_i(dm_local_data), .local_ack_i(dm_local_ack),
-    .local_err_i(dm_local_err),
-    .external_adr_o(dwb_adr_o), .external_dat_o(dwb_dat_o),
-    .external_sel_o(dwb_sel_o), .external_we_o(dwb_we_o),
-    .external_cyc_o(dwb_cyc_o), .external_stb_o(dwb_stb_o),
-    .external_dat_i(dwb_dat_i), .external_ack_i(dwb_ack_i),
-    .external_err_i(dwb_err_i)
+    // Outputs
+    .rsp_valid(DM_ready),
+    .rsp_error(DM_error),
+    .rsp_rdata(DR_out)
 );
 
 assign RD = DR_out;

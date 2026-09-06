@@ -1,7 +1,6 @@
 #include "semu/semu.h"
 #include "exec/exec.h"
 #include "run/run.h"
-#include "bus/wishbone.h"
 #include "dpi/dpi.h"
 
 SemuStatus semuStatus {};
@@ -19,7 +18,6 @@ void semuLoop(uint32_t n) {
         std::cout << semuStatus.numOfInst << " instruction(s) were executed" << std::endl;
         std::cout << "Executed " << semuStatus.numOfCycle << " clock cycle(s)"  << std::endl;
         std::cout << "CPI: " << static_cast<double>(semuStatus.numOfCycle) / static_cast<double>(semuStatus.numOfInst) << std::endl;
-        sim::displayWishboneDiffStats();
         sim::displayPipelinePerformanceCounters();
         sim::end();
     }

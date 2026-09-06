@@ -50,63 +50,96 @@ assign Offset20ShiftExt = {{11{Offset21[20]}}, Offset21};
 // branch/JALR target-plus-4 calculations, so a ripple adder here would sit in
 // series with the target adder on the PC critical path.
 NPC_prefix_adder32 U_NPC_IMM12_PLUS4 (
-    .A   (Imm12Ext),
-    .B   (32'd4),
-    .SUM (imm12_ext_p4_sum)
+    // Inputs
+    .A(Imm12Ext),
+    .B(32'd4),
+
+    // Outputs
+    .SUM(imm12_ext_p4_sum)
 );
 NPC_prefix_adder32 U_NPC_OFFSET12_PLUS4 (
-    .A   (Offset12ShiftExt),
-    .B   (32'd4),
-    .SUM (offset12_shift_ext_p4_sum)
+    // Inputs
+    .A(Offset12ShiftExt),
+    .B(32'd4),
+
+    // Outputs
+    .SUM(offset12_shift_ext_p4_sum)
 );
 NPC_prefix_adder32 U_NPC_OFFSET20_PLUS4 (
-    .A   (Offset20ShiftExt),
-    .B   (32'd4),
-    .SUM (offset20_shift_ext_p4_sum)
+    // Inputs
+    .A(Offset20ShiftExt),
+    .B(32'd4),
+
+    // Outputs
+    .SUM(offset20_shift_ext_p4_sum)
 );
 assign Imm12ExtP4 = $signed(imm12_ext_p4_sum);
 assign Offset12ShiftExtP4 = $signed(offset12_shift_ext_p4_sum);
 assign Offset20ShiftExtP4 = $signed(offset20_shift_ext_p4_sum);
 
 NPC_prefix_adder32 U_NPC_SEQ_PC_PLUS4 (
-    .A   (PC),
-    .B   (32'd4),
-    .SUM (seq_pc_plus4_sum)
+    // Inputs
+    .A(PC),
+    .B(32'd4),
+
+    // Outputs
+    .SUM(seq_pc_plus4_sum)
 );
 NPC_prefix_adder32 U_NPC_EX_PC_PLUS8 (
-    .A   (NPC_PC),
-    .B   (32'd8),
-    .SUM (ex_pc_plus8_sum)
+    // Inputs
+    .A(NPC_PC),
+    .B(32'd8),
+
+    // Outputs
+    .SUM(ex_pc_plus8_sum)
 );
 NPC_prefix_adder32 U_NPC_OFFSET12_TAKEN (
-    .A   (NPC_PC),
-    .B   (Offset12ShiftExt),
-    .SUM (npc_offset12_taken_sum)
+    // Inputs
+    .A(NPC_PC),
+    .B(Offset12ShiftExt),
+
+    // Outputs
+    .SUM(npc_offset12_taken_sum)
 );
 NPC_prefix_adder32 U_NPC_OFFSET20_TAKEN (
-    .A   (NPC_PC),
-    .B   (Offset20ShiftExt),
-    .SUM (npc_offset20_taken_sum)
+    // Inputs
+    .A(NPC_PC),
+    .B(Offset20ShiftExt),
+
+    // Outputs
+    .SUM(npc_offset20_taken_sum)
 );
 NPC_prefix_adder32 U_NPC_OFFSET12_TAKEN_P4 (
-    .A   (NPC_PC),
-    .B   (Offset12ShiftExtP4),
-    .SUM (npc_offset12_taken_p4_sum)
+    // Inputs
+    .A(NPC_PC),
+    .B(Offset12ShiftExtP4),
+
+    // Outputs
+    .SUM(npc_offset12_taken_p4_sum)
 );
 NPC_prefix_adder32 U_NPC_OFFSET20_TAKEN_P4 (
-    .A   (NPC_PC),
-    .B   (Offset20ShiftExtP4),
-    .SUM (npc_offset20_taken_p4_sum)
+    // Inputs
+    .A(NPC_PC),
+    .B(Offset20ShiftExtP4),
+
+    // Outputs
+    .SUM(npc_offset20_taken_p4_sum)
 );
 NPC_prefix_adder32 U_JALR_ADD (
-    .A   (NPC_rs),
-    .B   (Imm12Ext),
-    .SUM (jalr_sum)
+    // Inputs
+    .A(NPC_rs),
+    .B(Imm12Ext),
+
+    // Outputs
+    .SUM(jalr_sum)
 );
 NPC_prefix_adder32 U_JALR_ADD_P4 (
-    .A   (NPC_rs),
-    .B   (Imm12ExtP4),
-    .SUM (jalr_sum_p4)
+    // Inputs
+    .A(NPC_rs),
+    .B(Imm12ExtP4),
+
+    // Outputs
+    .SUM(jalr_sum_p4)
 );
 assign jalr_target = jalr_sum & 32'hffff_fffe;
 assign jalr_target_p4 = jalr_sum_p4 & 32'hffff_fffe;

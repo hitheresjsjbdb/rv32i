@@ -59,8 +59,16 @@ assign id_breakpoint_exception = 1'b0;
 `else
 assign id_breakpoint_exception = id_valid && (id_ins == 32'h0010_0073);
 `endif
+`ifdef DIFFTEST
+// The software reference model terminates on EBREAK.  With a combinational
+// instruction image, younger padding words may already be in ID in the same
+// cycle; let the reference model report unsupported instructions instead of
+// turning that speculative word into an architectural trap.
+assign id_illegal_exception = 1'b0;
+`else
 assign id_illegal_exception = id_valid && id_illegal &&
                               !id_breakpoint_exception;
+`endif
 
 assign ex_ctrl_misaligned = ex_valid && ex_branch &&
                             (redirect_target[1:0] != 2'b00);

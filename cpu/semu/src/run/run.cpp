@@ -4,7 +4,6 @@
 #include "verilated_vcd_c.h"
 #include <memory>
 #include "Vriscv.h"
-#include "bus/wishbone.h"
 
 extern SemuStatus semuStatus;
 
@@ -31,12 +30,6 @@ void sim::tick() {
 }
 
 void sim::reset() {
-    dut->iwb_dat_i = 0;
-    dut->iwb_ack_i = 0;
-    dut->iwb_err_i = 0;
-    dut->dwb_dat_i = 0;
-    dut->dwb_ack_i = 0;
-    dut->dwb_err_i = 0;
     dut->rst = 0;
     tick();
     dut->rst = 1;
@@ -49,11 +42,13 @@ bool sim::exec() {
     int i {};
     for (int i {}; ; i++) {
         tick();
-        if (!wishboneDiffPassed()) {
-            std::cout << "Wishbone difftest failed" << std::endl;
+        if (dut->done) break;
+        if (dut->trap) {
+            std::cout << "DUT raised trap (cause=" << unsigned(dut->trap_cause)
+                      << ", epc=0x" << std::hex << dut->trap_epc
+                      << ", tval=0x" << dut->trap_tval << std::dec << ")" << std::endl;
             return false;
         }
-        if (dut->done) break;
         if (i > 64) {
             std::cout << "DUT failed to execute" << std::endl;
             return false;

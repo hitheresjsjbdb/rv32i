@@ -18,16 +18,22 @@ assign SHAMT = B[4:0];
 // Explicit prefix adders avoid the ripple implementation inferred for the
 // DesignWare adders on the ALUOut critical path.
 ALU_prefix_adder32 U_PREFIX_ADD (
-    .A   (A),
-    .B   (B),
-    .CI  (1'b0),
-    .SUM (ADD_RESULT)
+    // Inputs
+    .A(A),
+    .B(B),
+    .CI(1'b0),
+
+    // Outputs
+    .SUM(ADD_RESULT)
 );
 ALU_prefix_adder32 U_PREFIX_SUB (
-    .A   (A),
-    .B   (~B),
-    .CI  (1'b1),
-    .SUM (SUB_RESULT)
+    // Inputs
+    .A(A),
+    .B(~B),
+    .CI(1'b1),
+
+    // Outputs
+    .SUM(SUB_RESULT)
 );
 
 assign LOGIC_RESULT =

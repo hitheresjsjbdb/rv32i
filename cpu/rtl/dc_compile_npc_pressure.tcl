@@ -54,11 +54,8 @@ set RTL_FILES [list \
     $RTL_DIR/PC.v \
     $RTL_DIR/PipelineRegisters.v \
     $RTL_DIR/RF.v \
-    $RTL_DIR/WishboneInstructionMaster.v \
-    $RTL_DIR/WishboneLocalRouter.v \
-    $RTL_DIR/WishboneMaster.v \
-    $RTL_DIR/WishboneInstructionMemory.v \
-    $RTL_DIR/WishboneDataMemory.v \
+    $RTL_DIR/DirectInstructionMemory.v \
+    $RTL_DIR/DirectDataMemory.v \
     $RTL_DIR/riscv.v \
 ]
 

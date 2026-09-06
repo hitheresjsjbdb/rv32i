@@ -28,11 +28,8 @@ my @sources = map { "$Bin/rtl/rtl/$_.v" } qw(
     PC
     PipelineRegisters
     RF
-    WishboneInstructionMaster
-    WishboneLocalRouter
-    WishboneMaster
-    WishboneInstructionMemory
-    WishboneDataMemory
+    DirectInstructionMemory
+    DirectDataMemory
     riscv
 );
 

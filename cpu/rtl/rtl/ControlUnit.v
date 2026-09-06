@@ -9,12 +9,12 @@ module ControlUnit(
     input rst,
     input clk,
     input [31:0] instruction,
-    output reg PCWrite,
-    output reg InsMemRW,
-    output reg RFWrite,
-    output reg DMCtrl,
-    output reg [1:0] NPCOp,
-    output reg [3:0] ALUOp,
+    output wire PCWrite,
+    output wire InsMemRW,
+    output wire RFWrite,
+    output wire DMCtrl,
+    output wire [1:0] NPCOp,
+    output wire [3:0] ALUOp,
 
     input [31:0] PC,
     input [31:0] PCA4,
@@ -32,8 +32,8 @@ module ControlUnit(
     input        DM_ready,
     input        DM_error,
 
-    output reg mem_hold,
-    output reg [31:0] PC_NPC,
+    output wire mem_hold,
+    output wire [31:0] PC_NPC,
     output reg [31:0] NPC_PC,
     output reg [31:0] FETCH_PC,
     output reg [19:0] NPC_EX_Offset20,
@@ -62,7 +62,15 @@ module ControlUnit(
 );
 
 `ifdef DIFFTEST
-Flopr #(.WIDTH(1)) U_done (.clk(clk), .rst(rst), .in_data(WB_valid), .out_data(done));
+Flopr #(.WIDTH(1)) U_done (
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .in_data(WB_valid),
+
+    // Outputs
+    .out_data(done)
+);
 `endif
 
 
@@ -72,7 +80,7 @@ Flopr #(.WIDTH(1)) U_done (.clk(clk), .rst(rst), .in_data(WB_valid), .out_data(d
 
 wire        IF_stall;
 wire [31:0] NPC_NPC, IM_PC;
-reg         IF_PCWrite, IF_InsMemRW;
+wire        IF_PCWrite, IF_InsMemRW;
 
 
 /* ID */
@@ -141,23 +149,26 @@ wire [31:0] MEM_PC;
 wire        MEM_load_ready;
 wire        ID_control_transfer;
 wire        ID_redirect;
-wire [31:0] IF_stage_PCA4_sum;
 wire [31:0] ID_redirect_target;
 
 `ifdef DIFFTEST
-reg [31:0] perf_if_wait_cycles;
-reg [31:0] perf_load_hazard_cycles;
-reg [31:0] perf_mem_wait_cycles;
-reg [31:0] perf_redirect_count;
+wire [31:0] perf_if_wait_cycles;
+wire [31:0] perf_load_hazard_cycles;
+wire [31:0] perf_mem_wait_cycles;
+wire [31:0] perf_redirect_count;
+wire [31:0] dnpc;
 `endif
 
 InstructionDecoder U_InstructionDecoder (
+    // Inputs
     .opcode(ID_opcode),
     .Funct7(ID_Funct7),
     .Funct3(ID_Funct3),
     .rs1(ID_rs1),
     .rs2(ID_rs2),
     .rd(ID_rd),
+
+    // Outputs
     .dec_valid(dec_valid),
     .rfwrite(ID_RFWrite),
     .dmctrl(ID_DMCtrl),
@@ -168,23 +179,32 @@ InstructionDecoder U_InstructionDecoder (
 
 assign ID_illegal = ID_valid && !dec_valid;
 
-assign IF_stage_valid = IF_accept;
-assign IF_stage_PC    = IM_PC;
-// IM_PC is the address presented to the instruction master.  A redirect can
-// make it differ from the registered PC for one cycle, so keep the accepted
-// instruction's sequential PC derived from the same address.
-NPC_prefix_adder32 U_IF_STAGE_PCA4_ADD (
-    .A   (IM_PC),
-    .B   (32'd4),
-    .SUM (IF_stage_PCA4_sum)
-);
-assign IF_stage_PCA4 = IF_stage_PCA4_sum;
+FetchStageControl U_FetchStageControl (
+    // Inputs
+    .fetch_pc(IM_PC),
+    .ins_mem_rw(InsMemRW),
+    .if_ready(IF_ready),
+    .if_error(IF_error),
 
-assign IF_accept             = InsMemRW && IF_ready;
-assign IF_access_fault       = IF_accept && IF_error;
-assign MEM_load_ready        = DM_ready && !DM_error;
+    // Outputs
+    .if_accept(IF_accept),
+    .if_access_fault(IF_access_fault),
+    .if_stage_valid(IF_stage_valid),
+    .if_stage_pc(IF_stage_PC),
+    .if_stage_pca4(IF_stage_PCA4)
+);
+
+MemoryResponseControl U_MemoryResponseControl (
+    // Inputs
+    .dm_ready(DM_ready),
+    .dm_error(DM_error),
+
+    // Outputs
+    .mem_load_ready(MEM_load_ready)
+);
 
 ExceptionUnit U_ExceptionUnit (
+    // Inputs
     .clk(clk),
     .rst(rst),
     .id_valid(ID_valid),
@@ -208,6 +228,8 @@ ExceptionUnit U_ExceptionUnit (
     .mem_address(ALU_result_r),
     .dm_ready(DM_ready),
     .dm_error(DM_error),
+
+    // Outputs
     .ex_exception(EX_exception),
     .mem_access_fault(MEM_access_fault),
     .mem_bus_wait(MEM_bus_wait),
@@ -221,26 +243,54 @@ ExceptionUnit U_ExceptionUnit (
     .trap_tval(trap_tval)
 );
 
+FetchAddressUnit U_FetchAddressUnit (
+    // Inputs
+    .pc(PC),
+    .pca4(PCA4),
+    .npc(NPC),
+    .id_redirect_target(ID_redirect_target),
+    .id_redirect(ID_redirect),
+    .ex_redirect(EX_redirect),
+    .trap_request(trap_request),
+    .trap(trap),
+
+    // Outputs
+    .npc_npc(NPC_NPC),
+    .im_pc(IM_PC),
+    .pc_npc(PC_NPC),
+    .pipe_flush(pipe_flush)
+);
+
+PipelineControl U_PipelineControl (
+    // Inputs
+    .if_pc_write(IF_PCWrite),
+    .if_ins_mem_rw(IF_InsMemRW),
+    .trap(trap),
+    .trap_request(trap_request),
+    .mem_bus_wait(MEM_bus_wait),
+    .ex_redirect_wait(EX_redirect_wait),
+    .ex_redirect(EX_redirect),
+    .id_redirect(ID_redirect),
+    .front_hazard_stall(front_hazard_stall),
+    .if_ready(IF_ready),
+    .wb_rf_write(WB_RFWrite),
+    .mem_dm_ctrl(MEM_DMCtrl),
+    .ex_alu_op(EX_ALUOp),
+    .ex_npc_op(EX_NPCOp),
+
+    // Outputs
+    .pc_write(PCWrite),
+    .ins_mem_rw(InsMemRW),
+    .rf_write(RFWrite),
+    .dm_ctrl(DMCtrl),
+    .alu_op(ALUOp),
+    .npc_op(NPCOp),
+    .mem_hold(mem_hold)
+);
+
 /* ******************************** Outputs ******************************** */
 
 always @(*) begin
-    PCWrite         = IF_PCWrite && !trap && !trap_request &&
-                      !MEM_bus_wait &&
-                      (EX_redirect || ID_redirect ||
-                       (!front_hazard_stall && IF_ready));
-    InsMemRW        = IF_InsMemRW && !trap && !trap_request &&
-                      !MEM_bus_wait && !front_hazard_stall;
-    RFWrite         = WB_RFWrite;
-    DMCtrl          = MEM_DMCtrl;
-    ALUOp           = EX_ALUOp;
-    NPCOp           = EX_NPCOp;
-
-    mem_hold        = MEM_bus_wait || EX_redirect_wait;
-    // A control transfer predicted in ID has already installed its target by
-    // the time it reaches EX.  Only an actual EX redirect may select the EX
-    // target again; otherwise advance the current fetch PC sequentially.
-    PC_NPC          = ID_redirect ? ID_redirect_target :
-                      EX_redirect ? NPC_NPC : PCA4;
     // Drive the EX-stage base PC directly so branch only acts as a final select,
     // not as a control input to the NPC adder cone.
     NPC_PC          = EX_PC;
@@ -264,19 +314,14 @@ end
 
 /* ################################ IF ################################ */
 
-assign NPC_NPC = NPC;
-
-// decode
-always @(*) begin
-    IF_PCWrite  = 1'b1;
-    IF_InsMemRW = 1'b1;
-end
+assign IF_PCWrite  = 1'b1;
+assign IF_InsMemRW = 1'b1;
 
 // Hazard detect in ID using only registered instruction fields.
 // This keeps the raw IM output out of the fetch-address feedback loop.
-assign pipe_flush = ID_redirect || EX_redirect || trap_request || trap;
 
 HazardUnit U_HazardUnit (
+    // Inputs
     .id_valid(ID_valid),
     .id_opcode(ID_opcode),
     .id_rs1(ID_rs1),
@@ -293,18 +338,16 @@ HazardUnit U_HazardUnit (
     .pipe_flush(pipe_flush),
     .mem_bus_wait(MEM_bus_wait),
     .if_ready(IF_ready),
+
+    // Outputs
     .front_hazard_stall(front_hazard_stall),
     .if_stall(IF_stall)
 );
 
-assign IM_PC = EX_redirect ? NPC_NPC :
-               ID_redirect ? ID_redirect_target : PC;
-
-
-
 /* ################################ ID ################################ */
 
 ForwardingUnit U_ForwardingUnit (
+    // Inputs
     .id_valid(ID_valid),
     .id_rs1(ID_rs1),
     .id_rs2(ID_rs2),
@@ -328,6 +371,8 @@ ForwardingUnit U_ForwardingUnit (
     .wb_data(WB_WD),
     .id_raw_rd1(RD1_raw),
     .id_raw_rd2(RD2_raw),
+
+    // Outputs
     .forward1(forward1_i),
     .forward2(forward2_i),
     .id_rd1(ID_RD1),
@@ -337,13 +382,17 @@ ForwardingUnit U_ForwardingUnit (
 );
 
 InstructionFields U_IDInstructionFields (
+    // Inputs
     .instruction(ID_ins),
+
+    // Outputs
     .opcode(ID_opcode), .funct7(ID_Funct7), .funct3(ID_Funct3),
     .rs1(ID_rs1), .rs2(ID_rs2), .rd(ID_rd),
     .imm12(ID_Imm12), .offset12(ID_Offset), .offset20(ID_Offset20)
 );
 
 IDRedirectUnit U_IDRedirectUnit (
+    // Inputs
     .id_valid(ID_valid),
     .opcode(ID_opcode), .funct3(ID_Funct3),
     .id_pc(ID_PC), .id_pca4(ID_PCA4),
@@ -352,15 +401,20 @@ IDRedirectUnit U_IDRedirectUnit (
     .front_hazard_stall(front_hazard_stall),
     .mem_bus_wait(MEM_bus_wait),
     .trap_request(trap_request), .trap(trap),
+
+    // Outputs
     .npcop(ID_NPCOp),
     .control_transfer(ID_control_transfer),
     .redirect(ID_redirect), .redirect_target(ID_redirect_target)
 );
 
 IDOperandSelector U_IDOperandSelector (
+    // Inputs
     .rd2(RD2),
     .imm12(ID_Imm12), .offset12(ID_Offset),
     .alusrcb(ID_ALUSrcB),
+
+    // Outputs
     .alu_b(ID_ALU_B_sel)
 );
 
@@ -370,94 +424,158 @@ IDOperandSelector U_IDOperandSelector (
 
 /* ################################ WB ################################ */
 
-assign MEM_writeback_data =
-    (MEM_WDSel == `WDSel_FromMEM) ? DM_RD :
-    (MEM_WDSel == `WDSel_FromPC)  ? MEM_PCA4 : ALU_result_r;
+WritebackMux U_WritebackMux (
+    // Inputs
+    .wdsel(MEM_WDSel),
+    .alu_data(ALU_result_r),
+    .mem_data(DM_RD),
+    .pc_data(MEM_PCA4),
+
+    // Outputs
+    .writeback_data(MEM_writeback_data)
+);
 
 
 /* #################################### pipeline #################################### */
 
 FetchDecodeRegisters U_FetchDecodeRegisters (
-    .clk(clk), .rst(rst),
-    .ready(!IF_stall), .kill(pipe_flush),
-    .if_stage_pc(IF_stage_PC), .if_stage_pca4(IF_stage_PCA4),
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .ready(!IF_stall),
+    .kill(pipe_flush),
+    .if_stage_pc(IF_stage_PC),
+    .if_stage_pca4(IF_stage_PCA4),
     .if_stage_valid(IF_stage_valid),
     .raw_instruction(instruction),
     .if_access_fault(IF_access_fault),
-    .id_pca4(ID_PCA4), .id_pc(ID_PC), .id_ins(ID_ins),
+
+    // Outputs
+    .id_pca4(ID_PCA4),
+    .id_pc(ID_PC),
+    .id_ins(ID_ins),
     .id_access_fault(ID_access_fault),
     .id_valid(ID_valid)
 );
 
 DecodeExecuteRegisters U_DecodeExecuteRegisters (
-    .clk(clk), .rst(rst),
+    // Inputs
+    .clk(clk),
+    .rst(rst),
     .ready(!(MEM_bus_wait || EX_redirect_wait)),
     .kill(EX_redirect || trap_request || trap || IF_stall),
-    .id_pca4(ID_PCA4), .id_pc(ID_PC),
-    .id_alu_b(ID_ALU_B_sel), .id_offset(ID_Offset),
-    .id_offset20(ID_Offset20), .id_rd(ID_rd),
-    .id_aluop(ID_ALUOp), .id_wdsel(ID_WDSel),
+    .id_pca4(ID_PCA4),
+    .id_pc(ID_PC),
+    .id_alu_b(ID_ALU_B_sel),
+    .id_offset(ID_Offset),
+    .id_offset20(ID_Offset20),
+    .id_rd(ID_rd),
+    .id_aluop(ID_ALUOp),
+    .id_wdsel(ID_WDSel),
     .id_rfwrite(ID_RFWrite),
-    .id_dmctrl(ID_DMCtrl), .id_valid(ID_valid),
+    .id_dmctrl(ID_DMCtrl),
+    .id_valid(ID_valid),
     .id_branch(ID_control_transfer),
-    .id_redirect_predicted(ID_redirect), .id_npcop(ID_NPCOp),
-    .ex_pca4(EX_PCA4), .ex_pc(EX_PC),
-    .ex_alu_b(EX_ALU_B_sel), .ex_offset(EX_Offset),
-    .ex_offset20(EX_Offset20), .ex_rd(EX_rd),
-    .ex_aluop(EX_ALUOp), .ex_wdsel(EX_WDSel),
+    .id_redirect_predicted(ID_redirect),
+    .id_npcop(ID_NPCOp),
+
+    // Outputs
+    .ex_pca4(EX_PCA4),
+    .ex_pc(EX_PC),
+    .ex_alu_b(EX_ALU_B_sel),
+    .ex_offset(EX_Offset),
+    .ex_offset20(EX_Offset20),
+    .ex_rd(EX_rd),
+    .ex_aluop(EX_ALUOp),
+    .ex_wdsel(EX_WDSel),
     .ex_rfwrite(EX_RFWrite),
-    .ex_dmctrl(EX_DMCtrl), .ex_valid(EX_valid),
+    .ex_dmctrl(EX_DMCtrl),
+    .ex_valid(EX_valid),
     .ex_branch(EX_branch),
-    .ex_redirect_predicted(EX_redirect_predicted), .ex_npcop(EX_NPCOp)
+    .ex_redirect_predicted(EX_redirect_predicted),
+    .ex_npcop(EX_NPCOp)
 );
 
 // Kill only the faulting EX instruction. Older MEM/WB instructions may retire.
 assign EX_to_MEM_kill = EX_exception || MEM_access_fault;
 
 ExecuteMemoryRegisters U_ExecuteMemoryRegisters (
-    .clk(clk), .rst(rst), .ready(!MEM_bus_wait),
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .ready(!MEM_bus_wait),
     .kill(EX_redirect_wait || EX_to_MEM_kill),
-    .ex_store_data(RD2_r), .ex_pca4(EX_PCA4), .ex_pc(EX_PC),
-    .ex_rd(EX_rd), .ex_wdsel(EX_WDSel),
-    .ex_rfwrite(EX_RFWrite), .ex_dmctrl(EX_DMCtrl),
+    .ex_store_data(RD2_r),
+    .ex_pca4(EX_PCA4),
+    .ex_pc(EX_PC),
+    .ex_rd(EX_rd),
+    .ex_wdsel(EX_WDSel),
+    .ex_rfwrite(EX_RFWrite),
+    .ex_dmctrl(EX_DMCtrl),
     .ex_valid(EX_valid),
-    .mem_store_data(MEM_WD), .mem_pca4(MEM_PCA4),
-    .mem_pc(MEM_PC), .mem_rd(MEM_rd), .mem_wdsel(MEM_WDSel),
-    .mem_rfwrite(MEM_RFWrite), .mem_dmctrl(MEM_DMCtrl),
+    // Outputs
+    .mem_store_data(MEM_WD),
+    .mem_pca4(MEM_PCA4),
+    .mem_pc(MEM_PC),
+    .mem_rd(MEM_rd),
+    .mem_wdsel(MEM_WDSel),
+    .mem_rfwrite(MEM_RFWrite),
+    .mem_dmctrl(MEM_DMCtrl),
     .mem_valid(MEM_valid)
 );
 
 MemoryWritebackRegisters U_MemoryWritebackRegisters (
-    .clk(clk), .rst(rst),
-    .ready(!MEM_bus_wait), .kill(MEM_access_fault),
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .ready(!MEM_bus_wait),
+    .kill(MEM_access_fault),
     .mem_writeback_data(MEM_writeback_data),
     .mem_rd(MEM_rd),
-    .mem_rfwrite(MEM_RFWrite), .mem_valid(MEM_valid),
-    .wb_data(WB_WD), .wb_rd(WB_rd),
-    .wb_rfwrite(WB_RFWrite), .wb_valid(WB_valid)
+    .mem_rfwrite(MEM_RFWrite),
+    .mem_valid(MEM_valid),
+
+    // Outputs
+    .wb_data(WB_WD),
+    .wb_rd(WB_rd),
+    .wb_rfwrite(WB_RFWrite),
+    .wb_valid(WB_valid)
 );
 
 `ifdef DIFFTEST
 
-always @(posedge clk or posedge rst) begin
-    if (rst) begin
-        perf_if_wait_cycles      <= 32'b0;
-        perf_load_hazard_cycles <= 32'b0;
-        perf_mem_wait_cycles     <= 32'b0;
-        perf_redirect_count      <= 32'b0;
-    end
-    else if (!trap) begin
-        if (MEM_bus_wait)
-            perf_mem_wait_cycles <= perf_mem_wait_cycles + 32'd1;
-        else if (front_hazard_stall)
-            perf_load_hazard_cycles <= perf_load_hazard_cycles + 32'd1;
-        else if (IF_InsMemRW && !IF_ready)
-            perf_if_wait_cycles <= perf_if_wait_cycles + 32'd1;
+DifftestPerfCounter U_DifftestPerfCounter (
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .trap(trap),
+    .mem_bus_wait(MEM_bus_wait),
+    .front_hazard_stall(front_hazard_stall),
+    .if_ins_mem_rw(IF_InsMemRW),
+    .if_ready(IF_ready),
+    .id_redirect(ID_redirect),
+    .ex_redirect(EX_redirect),
+    .if_wait_cycles(perf_if_wait_cycles),
+    .load_hazard_cycles(perf_load_hazard_cycles),
+    .mem_wait_cycles(perf_mem_wait_cycles),
+    .redirect_count(perf_redirect_count)
+);
 
-        if (ID_redirect || EX_redirect)
-            perf_redirect_count <= perf_redirect_count + 32'd1;
-    end
-end
+DifftestTrace U_DifftestTrace (
+    // Inputs
+    .clk(clk),
+    .rst(rst),
+    .pipe_flush(pipe_flush),
+    .if_stall(IF_stall),
+    .if_stage_pca4(IF_stage_PCA4),
+    .mem_bus_wait(MEM_bus_wait),
+    .ex_redirect_wait(EX_redirect_wait),
+    .ex_to_mem_kill(EX_to_MEM_kill),
+    .ex_branch(EX_branch),
+    .npc_npc(NPC_NPC),
+    .mem_access_fault(MEM_access_fault),
+    .dnpc_out(dnpc)
+);
 
 export "DPI-C" function DPI_getIfWaitCycles;
 function int DPI_getIfWaitCycles();
@@ -478,45 +596,6 @@ export "DPI-C" function DPI_getRedirectCount;
 function int DPI_getRedirectCount();
     return perf_redirect_count;
 endfunction
-
-reg [31:0] ID_dnpc, EX_dnpc, MEM_dnpc, WB_dnpc, dnpc;
-
-always @(posedge clk or posedge rst) begin
-    if (rst) begin
-        ID_dnpc       <= 32'b0;
-        EX_dnpc       <= 32'b0;
-        MEM_dnpc      <= 32'b0;
-        WB_dnpc       <= 32'b0;
-        dnpc          <= 32'b0;
-    end
-    else begin
-        if (pipe_flush)
-            ID_dnpc <= 32'b0;
-        else if (!IF_stall)
-            ID_dnpc <= IF_stage_PCA4;
-
-        if (!(MEM_bus_wait || EX_redirect_wait)) begin
-            if (pipe_flush || IF_stall)
-                EX_dnpc <= 32'b0;
-            else
-                EX_dnpc <= ID_dnpc;
-        end
-
-        if (!MEM_bus_wait) begin
-            if (EX_redirect_wait || EX_to_MEM_kill)
-                MEM_dnpc <= 32'b0;
-            else
-                MEM_dnpc <= EX_branch ? NPC_NPC : EX_dnpc;
-        end
-
-        if (MEM_bus_wait || MEM_access_fault)
-            WB_dnpc <= 32'b0;
-        else
-            WB_dnpc <= MEM_dnpc;
-
-        dnpc <= WB_dnpc;
-    end
-end
 
 export "DPI-C" function DPI_getPC;
 function int DPI_getPC();
